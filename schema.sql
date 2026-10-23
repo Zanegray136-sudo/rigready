@@ -118,6 +118,8 @@ create table public.logs (
   status_after  text,
   schedule_id   uuid references public.schedules(id) on delete set null,
   photos        text[] not null default '{}',
+  tech_name     text,                          -- name from imported records (no account)
+  source        text,                          -- e.g. 'excel-import'
   created_by    uuid references public.profiles(id) on delete set null default auth.uid(),
   created_at    timestamptz not null default now()
 );

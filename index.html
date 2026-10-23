@@ -245,6 +245,7 @@ const pill = st => `<span class="pill s-${slug(st)}">${h(st)}</span>`;
 const isAdmin = () => S.profile?.role === 'admin';
 const assetById = id => S.assets.find(a => a.id === id);
 const nameOf = id => S.profiles.find(p => p.id === id)?.name || 'Unknown';
+const whoOf = l => l.tech_name || nameOf(l.created_by);
 const byNewest = (a, b) => new Date(b.created_at) - new Date(a.created_at);
 
 const P = {
@@ -740,7 +741,7 @@ function logItem(l, showAsset) {
   return `<li class="log k-${slug(l.kind)}"><div class="log-dot"></div><div>
     <div class="log-top"><span class="kind">${h(l.kind)}</span><strong>${h(l.title)}</strong>${a ? `<a href="#/asset/${a.id}" class="tag">${h(a.tag)}</a><span class="muted small">${h(a.model)}</span>` : ''}</div>
     ${l.details ? `<p>${h(l.details)}</p>` : ''}
-    <div class="meta"><span>${fmtDT(l.created_at)}</span><span>· ${h(nameOf(l.created_by))}</span>${l.parts ? `<span>· Parts: ${h(l.parts)}</span>` : ''}${l.hours_at != null && l.hours_at !== '' ? `<span>· ${h(l.hours_at)} h</span>` : ''}${l.status_after ? `<span>·</span>${pill(l.status_after)}` : ''}</div>
+    <div class="meta"><span>${fmtDT(l.created_at)}</span><span>· ${h(whoOf(l))}</span>${l.parts ? `<span>· Parts: ${h(l.parts)}</span>` : ''}${l.hours_at != null && l.hours_at !== '' ? `<span>· ${h(l.hours_at)} h</span>` : ''}${l.status_after ? `<span>·</span>${pill(l.status_after)}` : ''}</div>
     ${l.photos?.length ? `<div class="thumbs">${l.photos.map(p => `<img class="thumb" alt="Photo" data-bucket="photos" data-path="${h(p)}" data-act="photo-open" data-p="${h(p)}">`).join('')}</div>` : ''}
   </div>${canDel && !showAsset ? `<button class="icon-btn" title="Delete entry" data-act="log-del" data-id="${l.id}">${ic('trash')}</button>` : '<span></span>'}</li>`;
 }
@@ -1004,7 +1005,7 @@ function exportCSV(what, opts = {}) {
     const rows = S.logs.filter(l => { const d = new Date(l.created_at); return d >= from && d <= to; }).sort(byNewest);
     downloadText(`maintenance-log-${stamp()}.csv`, toCSV(rows, [
       ['Date', l => fmtDT(l.created_at)], ['Asset tag', l => tagOf(l.asset_id)], ['Model', l => assetById(l.asset_id)?.model || ''], ['Type', l => l.kind], ['Summary', l => l.title],
-      ['Details', l => l.details], ['Parts', l => l.parts], ['Hours', l => l.hours_at], ['Status after', l => l.status_after], ['By', l => nameOf(l.created_by)], ['Photos', l => l.photos?.length || 0]]));
+      ['Details', l => l.details], ['Parts', l => l.parts], ['Hours', l => l.hours_at], ['Status after', l => l.status_after], ['By', l => whoOf(l)], ['Photos', l => l.photos?.length || 0]]));
     toast(`${rows.length} entries exported`);
   }
 }
@@ -1017,7 +1018,7 @@ function printAsset(a) {
   <div class="sub">Serial ${h(a.serial || '—')} · ${h(a.category)} · ${h(a.location || '—')} · Status: ${h(a.status)}${a.hours != null && a.hours !== '' ? ' · ' + h(a.hours) + ' h' : ''}<br>Printed ${fmtDT(new Date())} by ${h(S.profile.name)}</div>
   <h2>Maintenance history (${logs.length})</h2>
   <table><thead><tr><th>Date</th><th>Type</th><th>Summary & details</th><th>Parts</th><th>Hours</th><th>Status</th><th>By</th></tr></thead><tbody>
-  ${logs.map(l => `<tr><td>${fmtDT(l.created_at)}</td><td>${h(l.kind)}</td><td><b>${h(l.title)}</b>${l.details ? '<br>' + h(l.details).replace(/\n/g, '<br>') : ''}</td><td>${h(l.parts)}</td><td>${h(l.hours_at ?? '')}</td><td>${h(l.status_after || '')}</td><td>${h(nameOf(l.created_by))}</td></tr>`).join('') || '<tr><td colspan="7">No entries</td></tr>'}
+  ${logs.map(l => `<tr><td>${fmtDT(l.created_at)}</td><td>${h(l.kind)}</td><td><b>${h(l.title)}</b>${l.details ? '<br>' + h(l.details).replace(/\n/g, '<br>') : ''}</td><td>${h(l.parts)}</td><td>${h(l.hours_at ?? '')}</td><td>${h(l.status_after || '')}</td><td>${h(whoOf(l))}</td></tr>`).join('') || '<tr><td colspan="7">No entries</td></tr>'}
   </tbody></table>`);
 }
 function printFaults() {
