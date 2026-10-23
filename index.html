@@ -143,7 +143,6 @@ label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px;font-wei
 
 /* scan */
 .reader{width:100%;max-width:420px;margin:0 auto 14px;border-radius:12px;overflow:hidden;background:#000;min-height:0}
-.reader:empty{display:none}
 .reader video{display:block}
 .scan-big{display:grid;place-items:center;gap:14px;text-align:center;padding:26px 10px}
 .scan-ring{width:110px;height:110px;border-radius:24px;border:2px dashed var(--line2);display:grid;place-items:center;color:var(--accent)}
@@ -624,7 +623,7 @@ function vDashboard() {
 function vScan() {
   return `<header class="page-h"><div><h1>Scan</h1><p class="muted">Scan the QR on a fixture or console to open its record.</p></div></header>
   <section class="card">
-    <div id="reader" class="reader"></div>
+    <div id="reader" class="reader" hidden></div>
     <div class="scan-big" id="scan-idle">
       <div class="scan-ring">${ic('scan')}</div>
       <div class="row" style="justify-content:center"><button class="btn primary" data-act="cam-start">${ic('camera')} Start camera</button>
@@ -651,14 +650,14 @@ async function camStart() {
   if (!window.Html5Qrcode) return showCamMsg('The scanner didn\'t load. Reload the page and try again.');
   if (!isSecureContext) return showCamMsg('The camera only works when the app is opened from its https:// web address.');
   if (!navigator.mediaDevices?.getUserMedia) return showCamMsg('This browser can\'t use the live camera (some in-app browsers block it). Open the link in Safari or Chrome, or use "Take a photo".');
-  $('#scan-idle').hidden = true; $('#cam-stop').hidden = false;
+  $('#scan-idle').hidden = true; $('#cam-stop').hidden = false; $('#reader').hidden = false;
   try {
     qr = new Html5Qrcode('reader', { verbose: false });
-    await qr.start({ facingMode: 'environment' }, { fps: 10, qrbox: (w, hh) => { const s = Math.floor(Math.min(w, hh) * .7); return { width: s, height: s }; } },
+    await qr.start({ facingMode: 'environment' }, { fps: 10, aspectRatio: 1.333 },
       txt => { camStop(); if (navigator.vibrate) navigator.vibrate(60); lookup(txt); });
   } catch (e) {
     try { qr?.clear(); } catch {}
-    qr = null; $('#scan-idle').hidden = false; $('#cam-stop').hidden = true;
+    qr = null; $('#scan-idle').hidden = false; $('#cam-stop').hidden = true; $('#reader').hidden = true;
     showCamMsg(camProblem(e));
   }
 }
@@ -674,7 +673,7 @@ async function scanPhoto(input) {
 async function camStop() {
   if (!qr) return; const q = qr; qr = null;
   try { await q.stop(); q.clear(); } catch {}
-  const idle = $('#scan-idle'); if (idle) { idle.hidden = false; $('#cam-stop').hidden = true; }
+  const idle = $('#scan-idle'); if (idle) { idle.hidden = false; $('#cam-stop').hidden = true; $('#reader').hidden = true; }
 }
 function lookup(raw, fromRoute) {
   let code = String(raw || '').trim();
