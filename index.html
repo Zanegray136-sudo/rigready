@@ -1,0 +1,1131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>BenchLog</title>
+<meta name="theme-color" content="#0e1014">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0e1014;--panel:#161920;--panel2:#1c2029;--line:#262b36;--line2:#323846;
+  --text:#e6e8ee;--muted:#8b93a7;--accent:#f5a524;--accent-ink:#1a1204;
+  --ok:#3ecf8e;--warn:#f5a524;--bad:#ff5d5d;--info:#5aa9ff;--grey:#6b7385;
+  --r:10px;--mono:'JetBrains Mono',ui-monospace,Menlo,monospace;
+  font-family:Inter,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font-size:14px;line-height:1.45;-webkit-text-size-adjust:100%}
+a{color:inherit}
+h1{font-size:22px;margin:0;font-weight:700;letter-spacing:-.01em}
+h2{font-size:14px;margin:0 0 12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+p{margin:0}
+.muted{color:var(--muted)}.small{font-size:12px}.mono{font-family:var(--mono);font-size:13px}
+.ic{width:18px;height:18px;flex:none}
+.center{display:grid;place-items:center;min-height:60vh}
+
+/* buttons & inputs */
+.btn{display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 14px;border-radius:8px;border:1px solid var(--line2);background:var(--panel2);color:var(--text);font:inherit;font-weight:500;cursor:pointer;text-decoration:none;white-space:nowrap}
+.btn:hover{border-color:#47506a}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.danger{color:var(--bad)}
+.btn.sm{height:30px;padding:0 10px;font-size:13px}
+.btn:disabled{opacity:.5;cursor:default}
+.icon-btn{display:inline-grid;place-items:center;width:38px;height:38px;border-radius:8px;border:0;background:transparent;color:var(--text);cursor:pointer}
+.icon-btn:hover{background:var(--panel2)}
+input,select,textarea{width:100%;font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--line2);border-radius:8px;padding:9px 11px;min-height:38px}
+input:focus,select:focus,textarea:focus{outline:2px solid color-mix(in srgb,var(--accent) 55%,transparent);outline-offset:0;border-color:var(--accent)}
+textarea{min-height:90px;resize:vertical}
+label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px;font-weight:500}
+.field{margin-bottom:14px}
+.fgrid{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
+.fgrid .full{grid-column:1/-1}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.spacer{flex:1}
+
+/* layout */
+.demo-bar{background:#2a2110;color:#f7cf86;font-size:12px;padding:7px 16px;text-align:center;border-bottom:1px solid #3d3016}
+.layout{display:grid;grid-template-columns:232px 1fr;min-height:100vh}
+.side{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;position:sticky;top:0;height:100vh;padding:16px 12px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px;letter-spacing:-.01em;padding:4px 8px 18px}
+.brand .logo{width:28px;height:28px;border-radius:7px;background:var(--accent);display:grid;place-items:center;color:var(--accent-ink)}
+.brand .logo .ic{width:17px;height:17px}
+.nav-i{display:flex;align-items:center;gap:11px;padding:9px 10px;border-radius:8px;text-decoration:none;color:var(--muted);font-weight:500;margin-bottom:2px}
+.nav-i:hover{background:var(--panel2);color:var(--text)}
+.nav-i.on{background:var(--panel2);color:var(--text);box-shadow:inset 3px 0 0 var(--accent)}
+.badge{margin-left:auto;font-style:normal;background:var(--bad);color:#fff;font-size:11px;font-weight:700;border-radius:99px;padding:1px 7px}
+.side-foot{margin-top:auto;border-top:1px solid var(--line);padding-top:12px}
+.me{padding:4px 8px 10px}
+.me strong{display:block;font-weight:600}
+.side-foot .nav-i{width:100%;border:0;background:none;font:inherit;cursor:pointer}
+.main{padding:28px 32px 80px;max-width:1240px;width:100%}
+.topbar{display:none}
+.scrim{display:none}
+.page-h{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:22px;flex-wrap:wrap}
+.page-h p{margin-top:4px}
+
+/* cards */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:18px;margin-bottom:16px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid2>.card{margin-bottom:0}
+.stack>*+*{margin-top:16px}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;text-decoration:none}
+.stat b{display:block;font-size:26px;font-weight:700;letter-spacing:-.02em;margin-top:2px}
+.stat.bad b{color:var(--bad)}.stat.warn b{color:var(--warn)}.stat.ok b{color:var(--ok)}
+.alert{border-radius:var(--r);padding:14px 16px;margin-bottom:16px;border:1px solid}
+.alert.bad{background:#2a1416;border-color:#5a2328}
+.alert.warn{background:#2a2110;border-color:#4d3a14}
+.alert-h{display:flex;align-items:center;gap:8px;font-weight:600;margin-bottom:8px}
+.alert.bad .alert-h{color:#ff8a8a}.alert.warn .alert-h{color:#f7cf86}
+.alert ul{margin:0;padding:0;list-style:none}
+.alert li{display:flex;gap:10px;align-items:center;padding:6px 0;border-top:1px solid rgba(255,255,255,.06);flex-wrap:wrap}
+.alert li:first-child{border-top:0}
+.alert a{text-decoration:none}
+.empty{color:var(--muted);padding:18px 0;text-align:center}
+
+/* pills */
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;padding:3px 9px;border-radius:99px;white-space:nowrap}
+.pill::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.s-ok{color:var(--ok);background:rgba(62,207,142,.12)}
+.s-faulty{color:var(--bad);background:rgba(255,93,93,.13)}
+.s-in-repair{color:var(--warn);background:rgba(245,165,36,.13)}
+.s-out-of-service{color:#ff8a5d;background:rgba(255,138,93,.13)}
+.s-retired{color:var(--grey);background:rgba(107,115,133,.15)}
+.d-overdue{color:var(--bad);background:rgba(255,93,93,.13)}
+.d-soon{color:var(--warn);background:rgba(245,165,36,.13)}
+.d-ok{color:var(--ok);background:rgba(62,207,142,.12)}
+.tag{font-family:var(--mono);font-size:13px;font-weight:500;color:var(--accent)}
+
+/* tables & lists */
+.tbl{width:100%;border-collapse:collapse}
+.tbl th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600;padding:8px 10px;border-bottom:1px solid var(--line)}
+.tbl td{padding:11px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+.tbl tr.click{cursor:pointer}
+.tbl tr.click:hover td{background:var(--panel2)}
+.tbl tr:last-child td{border-bottom:0}
+.tbl-wrap{overflow-x:auto;margin:0 -18px;padding:0 18px}
+.list{list-style:none;margin:0;padding:0}
+.list>li{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line);flex-wrap:wrap}
+.list>li:first-child{border-top:0}
+.list a{text-decoration:none}
+.filters{display:grid;grid-template-columns:1fr 160px 170px;gap:10px;margin-bottom:14px}
+.tabs{display:inline-flex;background:var(--bg);border:1px solid var(--line2);border-radius:9px;padding:3px;gap:2px}
+.tabs button{border:0;background:none;color:var(--muted);font:inherit;font-weight:500;padding:6px 12px;border-radius:6px;cursor:pointer}
+.tabs button.on{background:var(--panel2);color:var(--text)}
+
+/* asset detail */
+.a-head{display:flex;gap:16px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;margin-bottom:18px}
+.a-head h1 .tag{font-size:22px}
+.kv{display:grid;grid-template-columns:repeat(4,1fr);gap:14px 18px}
+.kv div span{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:3px}
+.kv div b{font-weight:500}
+.cols{display:grid;grid-template-columns:1.6fr 1fr;gap:16px;align-items:start}
+
+/* timeline */
+.tl{list-style:none;margin:0;padding:0}
+.log{display:grid;grid-template-columns:14px 1fr auto;gap:12px;padding:12px 0;border-top:1px solid var(--line)}
+.log:first-child{border-top:0}
+.log-dot{width:10px;height:10px;border-radius:50%;margin-top:5px;background:var(--grey)}
+.k-fault .log-dot{background:var(--bad)}.k-repair .log-dot{background:var(--ok)}.k-service .log-dot{background:var(--info)}.k-inspection .log-dot{background:var(--warn)}
+.log-top{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.kind{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.log p{margin:5px 0 0;white-space:pre-wrap;color:#c9cdd8}
+.meta{font-size:12px;color:var(--muted);margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.thumbs{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.thumb{width:72px;height:72px;border-radius:8px;object-fit:cover;background:var(--panel2);border:1px solid var(--line2);cursor:pointer}
+
+/* scan */
+.reader{width:100%;max-width:420px;margin:0 auto 14px;border-radius:12px;overflow:hidden;background:#000;min-height:0}
+.reader:empty{display:none}
+.reader video{display:block}
+.scan-big{display:grid;place-items:center;gap:14px;text-align:center;padding:26px 10px}
+.scan-ring{width:110px;height:110px;border-radius:24px;border:2px dashed var(--line2);display:grid;place-items:center;color:var(--accent)}
+.scan-ring .ic{width:46px;height:46px}
+.lookup{display:flex;gap:8px;max-width:520px;margin:0 auto}
+.lookup input{font-family:var(--mono)}
+
+/* modal */
+.modal{position:fixed;inset:0;background:rgba(5,6,9,.7);display:none;align-items:flex-start;justify-content:center;padding:6vh 16px;z-index:50;overflow-y:auto}
+.modal.open{display:flex}
+.modal-box{background:var(--panel);border:1px solid var(--line2);border-radius:14px;width:100%;max-width:560px;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.modal-h{display:flex;align-items:center;justify-content:space-between;padding:14px 14px 14px 20px;border-bottom:1px solid var(--line)}
+.modal-h h3{margin:0;font-size:16px}
+.modal-b{padding:20px}
+.modal-f{display:flex;justify-content:flex-end;gap:8px;padding-top:6px}
+.note{background:var(--panel2);border:1px solid var(--line2);border-radius:8px;padding:10px 12px;font-size:13px;color:var(--muted);margin-bottom:14px}
+
+/* auth */
+.auth{min-height:100vh;display:grid;place-items:center;padding:24px 16px}
+.auth-card{width:100%;max-width:380px}
+.auth-card .brand{justify-content:center;font-size:22px;padding-bottom:6px}
+.auth-card .brand .logo{width:36px;height:36px}
+.auth-card .card{padding:22px;margin-top:20px}
+.auth-card .tabs{display:flex;margin-bottom:18px}
+.auth-card .tabs button{flex:1}
+.err{color:var(--bad);font-size:13px;margin-top:10px;min-height:1em}
+
+/* toast */
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:60;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none}
+.toast{background:#232836;border:1px solid var(--line2);padding:10px 16px;border-radius:9px;box-shadow:0 8px 30px rgba(0,0,0,.4);font-weight:500;animation:tin .2s ease}
+.toast.bad{border-color:#5a2328;color:#ff9a9a}.toast.warn{border-color:#4d3a14;color:#f7cf86}
+@keyframes tin{from{opacity:0;transform:translateY(6px)}}
+
+#print{display:none}
+
+@media (max-width:980px){.stats{grid-template-columns:repeat(2,1fr)}.cols,.grid2{grid-template-columns:1fr}.kv{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:860px){
+  .layout{display:block}
+  .topbar{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:20}
+  .topbar .brand{padding:0;font-size:15px}
+  .topbar .brand .logo{width:24px;height:24px}
+  .side{position:fixed;left:0;top:0;bottom:0;width:260px;z-index:40;transform:translateX(-100%);transition:transform .2s ease;height:100%}
+  body.nav-open .side{transform:none}
+  body.nav-open .scrim{display:block;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:30}
+  .main{padding:18px 16px 90px}
+  .filters{grid-template-columns:1fr 1fr}.filters input{grid-column:1/-1}
+  .fgrid{grid-template-columns:1fr}
+  .hide-m{display:none}
+  .fab{position:fixed;right:18px;bottom:20px;width:58px;height:58px;border-radius:50%;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;box-shadow:0 8px 24px rgba(0,0,0,.45);z-index:25}
+  .fab .ic{width:26px;height:26px}
+}
+@media (min-width:861px){.fab{display:none}}
+
+@media print{
+  body{background:#fff;color:#000}
+  #app,#modal,#toast{display:none!important}
+  #print{display:block;font-family:Inter,Arial,sans-serif;font-size:11pt;color:#000}
+  #print h1{font-size:18pt;margin:0 0 4pt}
+  #print h2{color:#000;font-size:11pt;margin:16pt 0 6pt}
+  #print table{width:100%;border-collapse:collapse}
+  #print th,#print td{border-bottom:1px solid #ccc;padding:5pt 6pt;text-align:left;vertical-align:top;font-size:10pt}
+  #print th{background:#f2f2f2}
+  #print .sub{color:#555;margin-bottom:10pt}
+}
+</style>
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+</head>
+<body>
+<div id="app"><div class="center muted">Loading…</div></div>
+<div id="modal" class="modal"><div class="modal-box"><div class="modal-h"><h3 id="modal-title"></h3><button class="icon-btn" data-act="modal-close" aria-label="Close"></button></div><div class="modal-b" id="modal-body"></div></div></div>
+<div id="toast"></div>
+<div id="print"></div>
+
+<script>
+/* ============================================================
+   BenchLog — lighting fixture & console maintenance log
+   ============================================================ */
+const CFG = Object.assign({ SUPABASE_URL:'', SUPABASE_ANON_KEY:'', APP_NAME:'BenchLog', FAULT_ALERT_DAYS:60, DUE_SOON_DAYS:14 }, window.BENCHLOG_CONFIG || {});
+const DEMO = !CFG.SUPABASE_URL || !CFG.SUPABASE_ANON_KEY;
+const sb = (!DEMO && window.supabase) ? window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY) : null;
+
+const BAD = ['Faulty','In repair','Out of service'];
+const STATUSES = ['OK','Faulty','In repair','Out of service','Retired'];
+const CATS = ['Fixture','Console','Other'];
+const KINDS = ['Fault','Repair','Service','Inspection','Note'];
+const DAY = 864e5;
+
+/* ---------- helpers ---------- */
+const $ = (s, el=document) => el.querySelector(s);
+const h = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const norm = s => String(s ?? '').trim().toLowerCase();
+const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
+const fmtDate = d => d ? new Date(d).toLocaleDateString(undefined, {day:'numeric', month:'short', year:'numeric'}) : '—';
+const fmtDT = d => d ? new Date(d).toLocaleString(undefined, {day:'numeric', month:'short', year:'numeric', hour:'numeric', minute:'2-digit'}) : '—';
+const daysSince = d => Math.floor((Date.now() - new Date(d)) / DAY);
+const slug = s => norm(s).replace(/[^a-z0-9]+/g, '-');
+const pill = st => `<span class="pill s-${slug(st)}">${h(st)}</span>`;
+const isAdmin = () => S.profile?.role === 'admin';
+const assetById = id => S.assets.find(a => a.id === id);
+const nameOf = id => S.profiles.find(p => p.id === id)?.name || 'Unknown';
+const byNewest = (a, b) => new Date(b.created_at) - new Date(a.created_at);
+
+const P = {
+  home:'<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/>',
+  scan:'<path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M7 12h10"/>',
+  box:'<path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/>',
+  wrench:'<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/>',
+  book:'<path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 21V5M8 7h7"/>',
+  chart:'<path d="M5 20V11M11 20V5M17 20v-6M3 20h18"/>',
+  users:'<circle cx="9" cy="8" r="3.5"/><path d="M2 20c0-3.5 3-6 7-6s7 2.5 7 6"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M22 20c0-3-2-5.2-5-5.8"/>',
+  plus:'<path d="M12 5v14M5 12h14"/>', x:'<path d="M6 6l12 12M18 6L6 18"/>', menu:'<path d="M4 7h16M4 12h16M4 17h16"/>',
+  alert:'<path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18v.01"/>',
+  print:'<path d="M7 9V3h10v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 14h10v7H7z"/>',
+  download:'<path d="M12 3v12M7 10l5 5 5-5M4 21h16"/>', edit:'<path d="M4 20h4L20 8l-4-4L4 16z"/>',
+  trash:'<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>', logout:'<path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h11"/>',
+  camera:'<path d="M3 8h4l2-3h6l2 3h4v12H3z"/><circle cx="12" cy="13" r="4"/>', check:'<path d="M5 12l5 5 9-10"/>',
+  clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', file:'<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/>',
+  refresh:'<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/>',
+};
+const ic = n => `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[n] || ''}</svg>`;
+const LOGO = `<span class="logo">${ic('wrench')}</span>`;
+$('[data-act="modal-close"]').innerHTML = ic('x');
+
+function toast(msg, kind='') {
+  const t = document.createElement('div'); t.className = 'toast ' + kind; t.textContent = msg;
+  $('#toast').appendChild(t); setTimeout(() => t.remove(), 3200);
+}
+function errMsg(e) { return e?.message || e?.error_description || String(e); }
+
+async function compressImage(file, max) {
+  max = max || (DEMO ? 900 : 1600);
+  if (!file.type.startsWith('image/')) return file;
+  try {
+    const bmp = await createImageBitmap(file);
+    const sc = Math.min(1, max / Math.max(bmp.width, bmp.height));
+    const c = document.createElement('canvas'); c.width = Math.round(bmp.width * sc); c.height = Math.round(bmp.height * sc);
+    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+    const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', DEMO ? .7 : .82));
+    return blob || file;
+  } catch { return file; }
+}
+
+/* ============================================================
+   DATA LAYER — Supabase (live) or browser storage (demo)
+   ============================================================ */
+function supabaseApi() {
+  return {
+    async session() { const { data } = await sb.auth.getSession(); return data.session?.user || null; },
+    async signIn(email, password) { const { error } = await sb.auth.signInWithPassword({ email, password }); if (error) throw error; },
+    async signUp(name, email, password) {
+      const { data, error } = await sb.auth.signUp({ email, password, options: { data: { name }, emailRedirectTo: location.href.split('#')[0] } });
+      if (error) throw error; return data;
+    },
+    async resetPw(email) { const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.href.split('#')[0] }); if (error) throw error; },
+    async setPw(password) { const { error } = await sb.auth.updateUser({ password }); if (error) throw error; },
+    async signOut() { await sb.auth.signOut(); },
+    async profile(id) { const { data, error } = await sb.from('profiles').select('*').eq('id', id).maybeSingle(); if (error) throw error; return data; },
+    async all(table) {
+      let out = [], from = 0;
+      for (;;) {
+        const { data, error } = await sb.from(table).select('*').order('created_at', { ascending: false }).range(from, from + 999);
+        if (error) throw error;
+        out = out.concat(data); if (data.length < 1000) break; from += 1000;
+      }
+      return out;
+    },
+    async insert(table, row) { const { data, error } = await sb.from(table).insert(row).select().single(); if (error) throw friendly(error); return data; },
+    async update(table, id, patch) { const { data, error } = await sb.from(table).update(patch).eq('id', id).select().single(); if (error) throw friendly(error); return data; },
+    async remove(table, id) { const { error } = await sb.from(table).delete().eq('id', id); if (error) throw friendly(error); },
+    async upload(bucket, blob, name) {
+      const path = `${new Date().toISOString().slice(0,10)}/${uid().slice(0,8)}-${String(name || 'file').replace(/[^\w.\-]+/g, '_')}`;
+      const { error } = await sb.storage.from(bucket).upload(path, blob, { contentType: blob.type || undefined });
+      if (error) throw error; return path;
+    },
+    async fileUrl(bucket, path) { const { data, error } = await sb.storage.from(bucket).createSignedUrl(path, 3600); if (error) throw error; return data.signedUrl; },
+  };
+  function friendly(e) {
+    if (e.code === '23505') return new Error('An item with that asset tag already exists.');
+    if (e.code === '42501') return new Error("You don't have permission to do that.");
+    return e;
+  }
+}
+
+function demoApi() {
+  const KEY = 'benchlog-demo-v1'; let mem = null;
+  const read = () => {
+    if (mem) return mem;
+    try { const r = localStorage.getItem(KEY); if (r) mem = JSON.parse(r); } catch {}
+    if (!mem) { mem = demoSeed(); save(); }
+    return mem;
+  };
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(mem)); } catch { toast('Demo storage is full — big photos/manuals won\'t survive a reload', 'warn'); } };
+  const dupTag = (d, tag, id) => tag && d.assets.some(a => a.id !== id && norm(a.tag) === norm(tag));
+  return {
+    async session() { return { id: 'demo-admin', email: 'demo@example.com' }; },
+    async signIn() {}, async signUp() {}, async resetPw() {}, async setPw() {},
+    async signOut() {
+      if (confirm('This is demo mode. Reset the demo data back to the sample items?')) { try { localStorage.removeItem(KEY); } catch {} mem = null; location.hash = '#/dashboard'; location.reload(); }
+    },
+    async profile(id) { return read().profiles.find(p => p.id === id); },
+    async all(t) { return [...(read()[t] || [])].sort(byNewest); },
+    async insert(t, row) {
+      const d = read(); if (t === 'assets' && dupTag(d, row.tag)) throw new Error('An item with that asset tag already exists.');
+      const r = { id: uid(), created_at: new Date().toISOString(), ...row }; d[t].push(r); save(); return r;
+    },
+    async update(t, id, p) {
+      const d = read(); if (t === 'assets' && dupTag(d, p.tag, id)) throw new Error('An item with that asset tag already exists.');
+      const i = d[t].findIndex(r => r.id === id); d[t][i] = { ...d[t][i], ...p }; save(); return d[t][i];
+    },
+    async remove(t, id) {
+      const d = read(); d[t] = d[t].filter(r => r.id !== id);
+      if (t === 'assets') { d.logs = d.logs.filter(l => l.asset_id !== id); d.schedules = d.schedules.filter(s => s.asset_id !== id); }
+      save();
+    },
+    async upload(b, blob, name) {
+      const url = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = rej; fr.readAsDataURL(blob); });
+      const d = read(); d.files = d.files || {}; const path = uid().slice(0, 8) + '-' + (name || 'file'); d.files[path] = url; save(); return path;
+    },
+    async fileUrl(b, path) { return read().files?.[path] || ''; },
+  };
+}
+
+function demoSeed() {
+  const ago = d => new Date(Date.now() - d * DAY).toISOString();
+  const A = (tag, serial, category, make, model, location, status, hours, created, faulty) =>
+    ({ id: uid(), tag, serial, category, make, model, location, status, hours, notes: '', created_at: ago(created), updated_at: ago(1), faulty_since: faulty != null ? ago(faulty) : null });
+  const a = [
+    A('LX-0101','MP-04411','Fixture','Robe','MegaPointe','Rack 3','OK',1320,400),
+    A('LX-0102','MP-04412','Fixture','Robe','MegaPointe','Rack 3','Faulty',1610,400,74),
+    A('LX-0103','MP-04420','Fixture','Robe','MegaPointe','Repair bench','In repair',980,400,12),
+    A('LX-0210','AXB-88213','Fixture','Martin','MAC Aura XB','Rack 5','OK',2100,600),
+    A('LX-0211','AXB-88219','Fixture','Martin','MAC Aura XB','Repair bench','Out of service',2240,600,95),
+    A('LX-0305','SH-55102','Fixture','Clay Paky','Sharpy','Rack 1','OK',1450,800),
+    A('LX-0410','S4L-19002','Fixture','ETC','Source Four LED Series 3','Shelf B','OK',300,200),
+    A('CON-001','MA3L-0042','Console','MA Lighting','grandMA3 light','Console room','OK',null,500),
+    A('CON-002','MA3C-0117','Console','MA Lighting','grandMA3 compact XT','Console room','Faulty',null,500,20),
+  ];
+  const T = t => a.find(x => x.tag === t).id;
+  const s = [
+    { id: uid(), make:'Robe', model:'MegaPointe', task:'Clean optics, fans & filters', interval_days:180, created_at: ago(399) },
+    { id: uid(), make:'Robe', model:'MegaPointe', task:'Lamp change', interval_hours:1500, created_at: ago(399) },
+    { id: uid(), make:'Martin', model:'MAC Aura XB', task:'Clean & check fans', interval_days:120, created_at: ago(500) },
+    { id: uid(), make:'Clay Paky', model:'Sharpy', task:'Lamp change', interval_hours:1500, created_at: ago(500) },
+    { id: uid(), make:'MA Lighting', model:'grandMA3 light', task:'Software update & show file backup', interval_days:90, created_at: ago(450) },
+    { id: uid(), asset_id: T('CON-002'), task:'Clean faders & encoders', interval_days:365, created_at: ago(450) },
+  ];
+  const L = (tag, kind, title, details, daysAgo, extra={}) => ({ id: uid(), asset_id: T(tag), kind, title, details, parts:'', hours_at:null, status_after:null, schedule_id:null, photos:[], created_by:'demo-tech', created_at: ago(daysAgo), ...extra });
+  const logs = [
+    L('LX-0102','Fault','Pan stalls around 270°','Fixture throws a pan error on homing after a load-out. Reproducible on the bench.',74,{status_after:'Faulty'}),
+    L('LX-0102','Inspection','Pan motor driver suspected','Swapped data cable and PSU — no change. Driver board ordered, waiting on supplier.',60,{created_by:'demo-admin'}),
+    L('LX-0103','Fault','Lamp won\'t strike','Came back from site with lamp not striking. Hours at 980.',12,{status_after:'In repair',hours_at:980}),
+    L('LX-0211','Fault','Zoom drifting','Zoom drifts after warm-up and errors on reset.',95,{status_after:'Faulty'}),
+    L('LX-0211','Repair','Replaced zoom belt — still faulty','Belt replaced, fault persists. Likely main board. Pulled from hire stock.',80,{status_after:'Out of service',parts:'Zoom belt x1'}),
+    L('CON-002','Fault','Encoder 3 skipping values','Reported by operator after last show. Intermittent.',20,{status_after:'Faulty',created_by:'demo-admin'}),
+    L('LX-0101','Service','Clean optics, fans & filters','Full clean, fans checked, filters replaced.',150,{schedule_id:s[0].id,hours_at:1100}),
+    L('CON-001','Service','Software update & show file backup','Updated to latest release, show files backed up to USB and drive.',70,{schedule_id:s[4].id}),
+    L('LX-0410','Inspection','Pre-hire check','Passed. Lens clean, clamp and safety OK.',9),
+  ];
+  const manuals = [
+    { id: uid(), make:'Robe', model:'MegaPointe', title:'Robe downloads & manuals', url:'https://www.robe.cz', created_at: ago(300) },
+    { id: uid(), make:'MA Lighting', model:'', title:'MA Lighting help & downloads', url:'https://www.malighting.com', created_at: ago(300) },
+  ];
+  const profiles = [
+    { id:'demo-admin', name:'Demo Admin', email:'demo@example.com', role:'admin', created_at: ago(500) },
+    { id:'demo-tech', name:'Sam (tech)', email:'sam@example.com', role:'tech', created_at: ago(300) },
+    { id:'demo-new', name:'New starter', email:'new@example.com', role:'pending', created_at: ago(1) },
+  ];
+  return { assets: a, schedules: s, logs, manuals, profiles, files: {} };
+}
+
+const api = DEMO ? demoApi() : supabaseApi();
+
+/* ============================================================
+   STATE
+   ============================================================ */
+const S = { booted:false, user:null, profile:null, recovery:false, authTab:'signin',
+  assets:[], logs:[], schedules:[], manuals:[], profiles:[],
+  filter:{ q:'', cat:'', status:'' }, dueTab:'due', manualQ:'' };
+
+async function loadAll() {
+  const [assets, logs, schedules, manuals, profiles] = await Promise.all(['assets','logs','schedules','manuals','profiles'].map(t => api.all(t)));
+  Object.assign(S, { assets, logs, schedules, manuals, profiles });
+}
+
+async function boot() {
+  try {
+    S.user = await api.session();
+    S.profile = S.user ? await api.profile(S.user.id) : null;
+    if (S.profile && S.profile.role !== 'pending') await loadAll();
+  } catch (e) { toast('Could not load data: ' + errMsg(e), 'bad'); }
+  S.booted = true; render();
+}
+
+/* ============================================================
+   MAINTENANCE LOGIC
+   ============================================================ */
+function longFaults() {
+  return S.assets.filter(a => BAD.includes(a.status) && a.faulty_since && daysSince(a.faulty_since) >= CFG.FAULT_ALERT_DAYS)
+    .sort((x, y) => new Date(x.faulty_since) - new Date(y.faulty_since));
+}
+function statusPatch(a, st) {
+  const p = { status: st };
+  if (BAD.includes(st) && !BAD.includes(a?.status)) p.faulty_since = new Date().toISOString();
+  if (!BAD.includes(st)) p.faulty_since = null;
+  return p;
+}
+function scheduleTargets(s) {
+  return s.asset_id ? S.assets.filter(a => a.id === s.asset_id && a.status !== 'Retired')
+    : S.assets.filter(a => a.status !== 'Retired' && norm(a.make) === norm(s.make) && norm(a.model) === norm(s.model));
+}
+function dueFor(s, a) {
+  const last = S.logs.filter(l => l.schedule_id === s.id && l.asset_id === a.id).sort(byNewest)[0];
+  const base = last ? last.created_at : a.created_at;
+  let state = 'ok', dueDate = null, daysLeft = null, hoursLeft = null;
+  if (s.interval_days) {
+    dueDate = new Date(new Date(base).getTime() + s.interval_days * DAY);
+    daysLeft = Math.ceil((dueDate - Date.now()) / DAY);
+    state = daysLeft < 0 ? 'overdue' : daysLeft <= CFG.DUE_SOON_DAYS ? 'soon' : 'ok';
+  }
+  if (s.interval_hours && a.hours != null && a.hours !== '') {
+    const lastH = last && last.hours_at != null ? Number(last.hours_at) : 0;
+    hoursLeft = Math.round(lastH + Number(s.interval_hours) - Number(a.hours));
+    if (hoursLeft <= 0) state = 'overdue';
+    else if (hoursLeft <= s.interval_hours * 0.1 && state === 'ok') state = 'soon';
+  }
+  return { s, a, last, dueDate, daysLeft, hoursLeft, state };
+}
+function dueList() {
+  const out = []; const rank = { overdue:0, soon:1, ok:2 };
+  for (const s of S.schedules) for (const a of scheduleTargets(s)) out.push(dueFor(s, a));
+  const key = d => d.daysLeft ?? d.hoursLeft ?? 1e9;
+  return out.sort((x, y) => rank[x.state] - rank[y.state] || key(x) - key(y));
+}
+function dueText(d) {
+  const p = [];
+  if (d.daysLeft != null) p.push(d.daysLeft < 0 ? `${-d.daysLeft} days overdue` : d.daysLeft === 0 ? 'due today' : `due in ${d.daysLeft} days`);
+  if (d.hoursLeft != null) p.push(d.hoursLeft <= 0 ? `${-d.hoursLeft} h over` : `${d.hoursLeft} h left`);
+  return p.join(' · ') || '—';
+}
+const duePill = d => `<span class="pill d-${d.state}">${d.state === 'overdue' ? 'Overdue' : d.state === 'soon' ? 'Due soon' : 'OK'}</span>`;
+function manualsFor(a) {
+  return S.manuals.filter(m => norm(m.make) === norm(a.make) && (!norm(m.model) || norm(m.model) === norm(a.model)));
+}
+function lastActivity(a) { return S.logs.find(l => l.asset_id === a.id); }
+
+/* ============================================================
+   ROUTING & RENDER
+   ============================================================ */
+function route() {
+  const parts = (location.hash || '#/dashboard').slice(2).split('/');
+  return { p: parts[0] || 'dashboard', arg: decodeURIComponent(parts.slice(1).join('/')) };
+}
+window.addEventListener('hashchange', () => { window.scrollTo(0, 0); render(); });
+
+function render() {
+  const r = route(); const app = $('#app');
+  if (r.p !== 'scan') camStop();
+  if (!S.booted) { app.innerHTML = '<div class="center muted">Loading…</div>'; return; }
+  if (S.recovery) { app.innerHTML = vRecovery(); return; }
+  if (!S.user) { app.innerHTML = vLogin(); return; }
+  if (!S.profile || S.profile.role === 'pending') { app.innerHTML = vPending(); return; }
+  if (r.p === 'tag') { lookup(r.arg, true); return; }
+  const views = { dashboard:vDashboard, scan:vScan, assets:vAssets, asset:() => vAsset(r.arg), schedules:vSchedules, manuals:vManuals, reports:vReports, team:vTeam };
+  app.innerHTML = shell(r.p, (views[r.p] || vDashboard)());
+  document.body.classList.remove('nav-open');
+  hydrateImages();
+  if (r.p === 'scan' && matchMedia('(min-width:861px)').matches) $('#code-input')?.focus();
+}
+
+function shell(p, body) {
+  const pending = isAdmin() ? S.profiles.filter(x => x.role === 'pending').length : 0;
+  const over = dueList().filter(d => d.state === 'overdue').length;
+  const lf = longFaults().length;
+  const item = (k, icn, label, badge) => `<a href="#/${k}" class="nav-i ${p === k || (k === 'assets' && p === 'asset') ? 'on' : ''}">${ic(icn)}<span>${label}</span>${badge ? `<em class="badge">${badge}</em>` : ''}</a>`;
+  return `${DEMO ? '<div class="demo-bar">Demo mode — sample data, saved only in this browser. Add your Supabase keys to config.js to go live with team log-ins.</div>' : ''}
+  <div class="topbar"><button class="icon-btn" data-act="nav-toggle" aria-label="Menu">${ic('menu')}</button><span class="brand">${LOGO}${h(CFG.APP_NAME)}</span><a class="icon-btn" href="#/scan" aria-label="Scan">${ic('scan')}</a></div>
+  <div class="layout">
+    <aside class="side">
+      <div class="brand">${LOGO}${h(CFG.APP_NAME)}</div>
+      <nav>
+        ${item('dashboard','home','Dashboard', lf)}
+        ${item('scan','scan','Scan')}
+        ${item('assets','box','Items')}
+        ${item('schedules','clock','Service schedule', over)}
+        ${item('manuals','book','Manuals')}
+        ${item('reports','chart','Reports')}
+        ${item('team','users','Team', pending)}
+      </nav>
+      <div class="side-foot">
+        <div class="me"><strong>${h(S.profile.name)}</strong><span class="muted small">${h(S.profile.role === 'admin' ? 'Admin' : 'Technician')}</span></div>
+        <button class="nav-i" data-act="refresh">${ic('refresh')}<span>Refresh</span></button>
+        <button class="nav-i" data-act="signout">${ic('logout')}<span>${DEMO ? 'Reset demo' : 'Sign out'}</span></button>
+      </div>
+    </aside>
+    <div class="scrim" data-act="nav-close"></div>
+    <main class="main">${body}</main>
+  </div>
+  ${p !== 'scan' ? `<a class="fab" href="#/scan" aria-label="Scan">${ic('scan')}</a>` : ''}`;
+}
+
+/* ---------- auth views ---------- */
+function vLogin() {
+  const t = S.authTab;
+  return `<div class="auth"><div class="auth-card">
+    <div class="brand">${LOGO}${h(CFG.APP_NAME)}</div>
+    <p class="muted" style="text-align:center">Fixture & console maintenance log</p>
+    <div class="card">
+      <div class="tabs"><button class="${t === 'signin' ? 'on' : ''}" data-act="auth-tab" data-tab="signin">Sign in</button><button class="${t === 'signup' ? 'on' : ''}" data-act="auth-tab" data-tab="signup">Create account</button></div>
+      ${t === 'signin' ? `
+      <form data-form="signin">
+        <div class="field"><label>Email</label><input name="email" type="email" autocomplete="email" required></div>
+        <div class="field"><label>Password</label><input name="password" type="password" autocomplete="current-password" required></div>
+        <button class="btn primary" style="width:100%;justify-content:center">Sign in</button>
+        <div class="err" id="auth-err"></div>
+        <p class="small" style="text-align:center;margin-top:6px"><a href="#" data-act="forgot" class="muted">Forgot password?</a></p>
+      </form>` : `
+      <form data-form="signup">
+        <div class="field"><label>Your name</label><input name="name" required autocomplete="name"></div>
+        <div class="field"><label>Email</label><input name="email" type="email" required autocomplete="email"></div>
+        <div class="field"><label>Password (8+ characters)</label><input name="password" type="password" minlength="8" required autocomplete="new-password"></div>
+        <button class="btn primary" style="width:100%;justify-content:center">Create account</button>
+        <div class="err" id="auth-err"></div>
+        <p class="small muted" style="margin-top:6px">An admin approves new accounts before they can see data.</p>
+      </form>`}
+    </div></div></div>`;
+}
+function vPending() {
+  return `<div class="auth"><div class="auth-card"><div class="brand">${LOGO}${h(CFG.APP_NAME)}</div>
+    <div class="card" style="text-align:center">
+      <h3 style="margin:0 0 8px">Waiting for approval</h3>
+      <p class="muted">You're signed in as ${h(S.user?.email)}. An admin needs to approve your account on the Team page before you can see the maintenance log.</p>
+      <div class="row" style="justify-content:center;margin-top:16px"><button class="btn" data-act="recheck">Check again</button><button class="btn" data-act="signout">Sign out</button></div>
+    </div></div></div>`;
+}
+function vRecovery() {
+  return `<div class="auth"><div class="auth-card"><div class="brand">${LOGO}${h(CFG.APP_NAME)}</div><div class="card">
+    <form data-form="newpw"><div class="field"><label>New password</label><input name="password" type="password" minlength="8" required autocomplete="new-password"></div>
+    <button class="btn primary" style="width:100%;justify-content:center">Set password</button><div class="err" id="auth-err"></div></form></div></div></div>`;
+}
+
+/* ---------- dashboard ---------- */
+function vDashboard() {
+  const active = S.assets.filter(a => a.status !== 'Retired');
+  const bad = active.filter(a => BAD.includes(a.status)).sort((x, y) => new Date(x.faulty_since || 0) - new Date(y.faulty_since || 0));
+  const lf = longFaults(); const due = dueList();
+  const over = due.filter(d => d.state === 'overdue'), soon = due.filter(d => d.state === 'soon');
+  const stat = (label, val, cls, href) => `<a class="stat ${cls}" href="${href}"><span class="muted small">${label}</span><b>${val}</b></a>`;
+  return `
+  <header class="page-h"><div><h1>Dashboard</h1><p class="muted">${new Date().toLocaleDateString(undefined, { weekday:'long', day:'numeric', month:'long' })}</p></div>
+    <div class="row"><button class="btn" data-act="asset-new">${ic('plus')} Add item</button><a class="btn primary" href="#/scan">${ic('scan')} Scan item</a></div></header>
+  <div class="stats">
+    ${stat('Items in stock', active.length, '', '#/assets')}
+    ${stat('Working', active.filter(a => a.status === 'OK').length, 'ok', '#/assets')}
+    ${stat('Faulty / in repair', bad.length, bad.length ? 'bad' : '', '#/assets')}
+    ${stat('Service overdue', over.length, over.length ? 'warn' : '', '#/schedules')}
+  </div>
+  ${lf.length ? `<section class="alert bad"><div class="alert-h">${ic('alert')} ${lf.length} item${lf.length > 1 ? 's have' : ' has'} been faulty for over ${Math.round(CFG.FAULT_ALERT_DAYS / 30)} months</div>
+    <ul>${lf.map(a => `<li><a href="#/asset/${a.id}" class="tag">${h(a.tag)}</a><span>${h(a.make)} ${h(a.model)}</span>${pill(a.status)}<span class="spacer"></span><strong>${daysSince(a.faulty_since)} days</strong><span class="muted small">since ${fmtDate(a.faulty_since)}</span></li>`).join('')}</ul></section>` : ''}
+  <div class="grid2">
+    <section class="card"><h2>Faulty now</h2>
+      ${bad.length ? `<ul class="list">${bad.map(a => { const l = S.logs.find(x => x.asset_id === a.id && x.kind === 'Fault');
+        return `<li><a href="#/asset/${a.id}" class="tag">${h(a.tag)}</a><span>${h(a.model)}</span>${pill(a.status)}<span class="spacer"></span><span class="muted small">${a.faulty_since ? daysSince(a.faulty_since) + ' d' : ''}</span>${l ? `<div class="muted small" style="width:100%">${h(l.title)}</div>` : ''}</li>`; }).join('')}</ul>` : '<p class="empty">Nothing faulty. Nice.</p>'}
+    </section>
+    <section class="card"><h2>Service due</h2>
+      ${over.length + soon.length ? `<ul class="list">${[...over, ...soon].slice(0, 10).map(d => `<li><a href="#/asset/${d.a.id}" class="tag">${h(d.a.tag)}</a><span>${h(d.s.task)}</span><span class="spacer"></span>${duePill(d)}<span class="muted small" style="width:100%">${h(d.a.model)} · ${dueText(d)}</span></li>`).join('')}</ul>
+        ${over.length + soon.length > 10 ? `<p style="margin-top:10px"><a href="#/schedules" class="small muted">See all ${over.length + soon.length} →</a></p>` : ''}` : '<p class="empty">No services due in the next ' + CFG.DUE_SOON_DAYS + ' days.</p>'}
+    </section>
+  </div>
+  <section class="card" style="margin-top:16px"><h2>Recent activity</h2>
+    ${S.logs.length ? `<ul class="tl">${S.logs.slice(0, 8).map(l => logItem(l, true)).join('')}</ul>` : '<p class="empty">No log entries yet. Scan an item to start.</p>'}
+  </section>`;
+}
+
+/* ---------- scan ---------- */
+function vScan() {
+  return `<header class="page-h"><div><h1>Scan</h1><p class="muted">Scan the QR on a fixture or console to open its record.</p></div></header>
+  <section class="card">
+    <div id="reader" class="reader"></div>
+    <div class="scan-big" id="scan-idle">
+      <div class="scan-ring">${ic('scan')}</div>
+      <button class="btn primary" data-act="cam-start">${ic('camera')} Start camera</button>
+    </div>
+    <div class="row" style="justify-content:center;margin-bottom:16px"><button class="btn" id="cam-stop" data-act="cam-stop" hidden>Stop camera</button></div>
+    <form data-form="lookup" class="lookup"><input id="code-input" name="code" placeholder="Type an asset number or use a scanner gun" autocomplete="off" autocapitalize="characters" required><button class="btn">Find</button></form>
+    <p class="muted small" style="text-align:center;margin-top:12px">Codes are matched to each item's asset tag, then its serial number. Unknown codes let you add the item on the spot.</p>
+  </section>`;
+}
+let qr = null;
+async function camStart() {
+  if (!window.Html5Qrcode) return toast('Scanner failed to load — check your connection', 'bad');
+  if (!isSecureContext) return toast('Camera needs the app to be opened over https', 'bad');
+  $('#scan-idle').hidden = true; $('#cam-stop').hidden = false;
+  try {
+    qr = new Html5Qrcode('reader', { verbose: false });
+    await qr.start({ facingMode: 'environment' }, { fps: 10, qrbox: (w, hh) => { const s = Math.floor(Math.min(w, hh) * .7); return { width: s, height: s }; } },
+      txt => { camStop(); if (navigator.vibrate) navigator.vibrate(60); lookup(txt); });
+  } catch (e) {
+    qr = null; $('#scan-idle').hidden = false; $('#cam-stop').hidden = true;
+    toast('Camera unavailable: ' + errMsg(e), 'bad');
+  }
+}
+async function camStop() {
+  if (!qr) return; const q = qr; qr = null;
+  try { await q.stop(); q.clear(); } catch {}
+  const idle = $('#scan-idle'); if (idle) { idle.hidden = false; $('#cam-stop').hidden = true; }
+}
+function lookup(raw, fromRoute) {
+  let code = String(raw || '').trim();
+  const m = code.match(/#\/tag\/(.+)$/); if (m) code = decodeURIComponent(m[1]);
+  if (!code) return;
+  const a = S.assets.find(x => norm(x.tag) === norm(code)) || S.assets.find(x => x.serial && norm(x.serial) === norm(code));
+  if (a) { const to = '#/asset/' + a.id; fromRoute ? location.replace(to) : (location.hash = to); return; }
+  if (fromRoute) location.replace('#/scan');
+  assetModal(null, { tag: code, notice: `No item with tag <span class="tag">${h(code)}</span> yet. Add it now?` });
+}
+
+/* ---------- items ---------- */
+function vAssets() {
+  const f = S.filter;
+  return `<header class="page-h"><div><h1>Items</h1><p class="muted">${S.assets.length} fixtures and consoles</p></div>
+    <div class="row"><button class="btn" data-act="export" data-what="inventory">${ic('download')} CSV</button><button class="btn primary" data-act="asset-new">${ic('plus')} Add item</button></div></header>
+  <section class="card">
+    <div class="filters">
+      <input data-filter="q" placeholder="Search tag, serial, make, model, location…" value="${h(f.q)}">
+      <select data-filter="cat"><option value="">All types</option>${CATS.map(c => `<option ${f.cat === c ? 'selected' : ''}>${c}</option>`).join('')}</select>
+      <select data-filter="status"><option value="">All statuses</option><option value="__bad" ${f.status === '__bad' ? 'selected' : ''}>Any fault</option>${STATUSES.map(s => `<option ${f.status === s ? 'selected' : ''}>${s}</option>`).join('')}</select>
+    </div>
+    <div id="asset-list">${assetTable()}</div>
+  </section>`;
+}
+function filteredAssets() {
+  const f = S.filter, q = norm(f.q);
+  return S.assets.filter(a => (!f.cat || a.category === f.cat)
+    && (!f.status || (f.status === '__bad' ? BAD.includes(a.status) : a.status === f.status))
+    && (!q || [a.tag, a.serial, a.make, a.model, a.location].some(v => norm(v).includes(q))))
+    .sort((x, y) => String(x.tag).localeCompare(String(y.tag), undefined, { numeric: true }));
+}
+function assetTable() {
+  const rows = filteredAssets();
+  if (!rows.length) return '<p class="empty">No items match.</p>';
+  return `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Tag</th><th>Item</th><th class="hide-m">Type</th><th class="hide-m">Location</th><th>Status</th><th class="hide-m">Hours</th><th class="hide-m">Last activity</th></tr></thead><tbody>
+  ${rows.map(a => { const l = lastActivity(a); return `<tr class="click" data-act="go" data-href="#/asset/${a.id}">
+    <td><span class="tag">${h(a.tag)}</span></td><td><div>${h(a.make)} ${h(a.model)}</div>${a.serial ? `<div class="muted small mono">${h(a.serial)}</div>` : ''}</td>
+    <td class="hide-m">${h(a.category)}</td><td class="hide-m">${h(a.location || '—')}</td><td>${pill(a.status)}</td>
+    <td class="hide-m">${a.hours != null && a.hours !== '' ? h(a.hours) : '—'}</td><td class="hide-m muted small">${l ? h(l.kind) + ' · ' + fmtDate(l.created_at) : '—'}</td></tr>`; }).join('')}
+  </tbody></table></div>`;
+}
+
+/* ---------- item detail ---------- */
+function vAsset(id) {
+  const a = assetById(id);
+  if (!a) return `<p class="empty">Item not found. <a href="#/assets">Back to items</a></p>`;
+  const logs = S.logs.filter(l => l.asset_id === a.id).sort(byNewest);
+  const dues = S.schedules.filter(s => scheduleTargets(s).some(x => x.id === a.id)).map(s => dueFor(s, a));
+  const mans = manualsFor(a);
+  const long = BAD.includes(a.status) && a.faulty_since && daysSince(a.faulty_since) >= CFG.FAULT_ALERT_DAYS;
+  const kv = (k, v) => `<div><span>${k}</span><b>${v}</b></div>`;
+  return `
+  <p class="small" style="margin-bottom:10px"><a href="#/assets" class="muted" style="text-decoration:none">← Items</a></p>
+  <div class="a-head">
+    <div><h1><span class="tag">${h(a.tag)}</span> &nbsp;${h(a.make)} ${h(a.model)}</h1>
+      <div class="row" style="margin-top:8px">${pill(a.status)}${BAD.includes(a.status) && a.faulty_since ? `<span class="muted small">for ${daysSince(a.faulty_since)} days (since ${fmtDate(a.faulty_since)})</span>` : ''}</div></div>
+    <div class="row">
+      <button class="btn primary" data-act="log-new" data-id="${a.id}">${ic('plus')} Log entry</button>
+      ${a.status === 'OK' ? `<button class="btn" data-act="log-new" data-id="${a.id}" data-kind="Fault">${ic('alert')} Report fault</button>` : `<button class="btn" data-act="log-new" data-id="${a.id}" data-kind="Repair">${ic('check')} Log repair</button>`}
+      <button class="btn" data-act="asset-edit" data-id="${a.id}">${ic('edit')} Edit</button>
+      <button class="btn" data-act="print-asset" data-id="${a.id}">${ic('print')} History PDF</button>
+    </div>
+  </div>
+  ${long ? `<div class="alert bad"><div class="alert-h">${ic('alert')} Faulty for ${daysSince(a.faulty_since)} days — over the ${CFG.FAULT_ALERT_DAYS}-day limit</div><p class="small">Chase the repair, send it away, or mark it out of service.</p></div>` : ''}
+  <section class="card"><div class="kv">
+    ${kv('Asset tag', `<span class="mono">${h(a.tag)}</span>`)}${kv('Serial', `<span class="mono">${h(a.serial || '—')}</span>`)}${kv('Type', h(a.category))}${kv('Location', h(a.location || '—'))}
+    ${kv('Make', h(a.make || '—'))}${kv('Model', h(a.model || '—'))}${kv('Hours', a.hours != null && a.hours !== '' ? h(a.hours) : '—')}${kv('Added', fmtDate(a.created_at))}
+  </div>${a.notes ? `<p style="margin-top:14px;white-space:pre-wrap" class="muted">${h(a.notes)}</p>` : ''}</section>
+  <div class="cols">
+    <section class="card"><h2>History (${logs.length})</h2>
+      ${logs.length ? `<ul class="tl">${logs.map(l => logItem(l, false)).join('')}</ul>` : '<p class="empty">No history yet.</p>'}
+    </section>
+    <div>
+      <section class="card"><div class="row" style="margin-bottom:10px"><h2 style="margin:0">Service</h2><span class="spacer"></span><button class="btn sm" data-act="sched-new" data-aid="${a.id}">${ic('plus')} Add</button></div>
+        ${dues.length ? `<ul class="list">${dues.map(d => `<li><div style="flex:1;min-width:150px"><div>${h(d.s.task)}</div><div class="muted small">${d.s.asset_id ? 'This item' : 'All ' + h(d.s.model)} · ${dueText(d)}</div></div>${duePill(d)}<button class="btn sm" data-act="done" data-sid="${d.s.id}" data-aid="${a.id}">Done</button></li>`).join('')}</ul>` : '<p class="empty">No service schedule.</p>'}
+      </section>
+      <section class="card"><div class="row" style="margin-bottom:10px"><h2 style="margin:0">Manuals</h2><span class="spacer"></span><button class="btn sm" data-act="manual-new" data-make="${h(a.make)}" data-model="${h(a.model)}">${ic('plus')} Add</button></div>
+        ${mans.length ? `<ul class="list">${mans.map(manualItem).join('')}</ul>` : `<p class="empty">No manuals for ${h(a.model || 'this model')}.</p>`}
+      </section>
+      ${isAdmin() ? `<button class="btn danger sm" data-act="asset-del" data-id="${a.id}">${ic('trash')} Delete item</button>` : ''}
+    </div>
+  </div>`;
+}
+function logItem(l, showAsset) {
+  const a = showAsset ? assetById(l.asset_id) : null;
+  const canDel = isAdmin();
+  return `<li class="log k-${slug(l.kind)}"><div class="log-dot"></div><div>
+    <div class="log-top"><span class="kind">${h(l.kind)}</span><strong>${h(l.title)}</strong>${a ? `<a href="#/asset/${a.id}" class="tag">${h(a.tag)}</a><span class="muted small">${h(a.model)}</span>` : ''}</div>
+    ${l.details ? `<p>${h(l.details)}</p>` : ''}
+    <div class="meta"><span>${fmtDT(l.created_at)}</span><span>· ${h(nameOf(l.created_by))}</span>${l.parts ? `<span>· Parts: ${h(l.parts)}</span>` : ''}${l.hours_at != null && l.hours_at !== '' ? `<span>· ${h(l.hours_at)} h</span>` : ''}${l.status_after ? `<span>·</span>${pill(l.status_after)}` : ''}</div>
+    ${l.photos?.length ? `<div class="thumbs">${l.photos.map(p => `<img class="thumb" alt="Photo" data-bucket="photos" data-path="${h(p)}" data-act="photo-open" data-p="${h(p)}">`).join('')}</div>` : ''}
+  </div>${canDel && !showAsset ? `<button class="icon-btn" title="Delete entry" data-act="log-del" data-id="${l.id}">${ic('trash')}</button>` : '<span></span>'}</li>`;
+}
+function manualItem(m) {
+  return `<li>${ic('file')}<a href="#" data-act="manual-open" data-id="${m.id}" style="flex:1">${h(m.title)}</a><span class="muted small">${h(m.make)}${m.model ? ' ' + h(m.model) : ' (all)'}</span>${isAdmin() ? `<button class="icon-btn" title="Delete" data-act="manual-del" data-id="${m.id}">${ic('trash')}</button>` : ''}</li>`;
+}
+const imgCache = {};
+async function hydrateImages() {
+  for (const img of document.querySelectorAll('img[data-path]')) {
+    const key = img.dataset.bucket + ':' + img.dataset.path;
+    try { imgCache[key] = imgCache[key] || await api.fileUrl(img.dataset.bucket, img.dataset.path); img.src = imgCache[key]; } catch {}
+  }
+}
+
+/* ---------- schedules ---------- */
+function vSchedules() {
+  const all = dueList(); const tab = S.dueTab;
+  const rows = tab === 'due' ? all.filter(d => d.state !== 'ok') : all;
+  return `<header class="page-h"><div><h1>Service schedule</h1><p class="muted">Recurring checks by model or by item — by days, run hours, or both.</p></div>
+    <div class="row"><button class="btn" data-act="export" data-what="due">${ic('download')} CSV</button><button class="btn primary" data-act="sched-new">${ic('plus')} Add schedule</button></div></header>
+  <section class="card">
+    <div class="row" style="margin-bottom:12px"><div class="tabs"><button class="${tab === 'due' ? 'on' : ''}" data-act="due-tab" data-tab="due">Overdue & due soon (${all.filter(d => d.state !== 'ok').length})</button><button class="${tab === 'all' ? 'on' : ''}" data-act="due-tab" data-tab="all">Everything (${all.length})</button></div></div>
+    ${rows.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Item</th><th>Task</th><th>Status</th><th class="hide-m">When</th><th class="hide-m">Last done</th><th></th></tr></thead><tbody>
+      ${rows.map(d => `<tr><td><a href="#/asset/${d.a.id}" class="tag" style="text-decoration:none">${h(d.a.tag)}</a><div class="muted small">${h(d.a.model)}</div></td><td>${h(d.s.task)}</td><td>${duePill(d)}</td>
+        <td class="hide-m small">${dueText(d)}</td><td class="hide-m muted small">${d.last ? fmtDate(d.last.created_at) : 'Never'}</td>
+        <td style="text-align:right"><button class="btn sm" data-act="done" data-sid="${d.s.id}" data-aid="${d.a.id}">${ic('check')} Done</button></td></tr>`).join('')}
+    </tbody></table></div>` : `<p class="empty">${tab === 'due' ? 'Nothing due. All serviced.' : 'No schedules yet.'}</p>`}
+  </section>
+  <section class="card"><h2>Schedules (${S.schedules.length})</h2>
+    ${S.schedules.length ? `<ul class="list">${S.schedules.map(s => { const n = scheduleTargets(s).length; const a = s.asset_id && assetById(s.asset_id);
+      return `<li><div style="flex:1;min-width:180px"><strong>${h(s.task)}</strong><div class="muted small">${a ? 'Item ' + h(a.tag) : h(s.make) + ' ' + h(s.model) + ` · ${n} item${n === 1 ? '' : 's'}`}</div></div>
+      <span class="muted small">Every ${[s.interval_days ? s.interval_days + ' days' : '', s.interval_hours ? s.interval_hours + ' h' : ''].filter(Boolean).join(' or ')}</span>
+      ${isAdmin() ? `<button class="icon-btn" title="Delete schedule" data-act="sched-del" data-id="${s.id}">${ic('trash')}</button>` : ''}</li>`; }).join('')}</ul>` : '<p class="empty">Add a schedule like "Clean fans every 180 days" or "Lamp change every 1500 h".</p>'}
+  </section>`;
+}
+
+/* ---------- manuals ---------- */
+function vManuals() {
+  const q = norm(S.manualQ);
+  const list = S.manuals.filter(m => !q || [m.make, m.model, m.title].some(v => norm(v).includes(q)))
+    .sort((x, y) => (x.make + x.model + x.title).localeCompare(y.make + y.model + y.title));
+  return `<header class="page-h"><div><h1>Manuals</h1><p class="muted">Service manuals and docs, shown on every matching item.</p></div><button class="btn primary" data-act="manual-new">${ic('plus')} Add manual</button></header>
+  <section class="card">
+    <input data-filter="manualQ" placeholder="Search make, model or title…" value="${h(S.manualQ)}" style="margin-bottom:12px">
+    <div id="manual-list">${list.length ? `<ul class="list">${list.map(manualItem).join('')}</ul>` : '<p class="empty">No manuals yet. Upload a PDF or add a link.</p>'}</div>
+  </section>`;
+}
+
+/* ---------- reports ---------- */
+function vReports() {
+  const since = d => S.logs.filter(l => daysSince(l.created_at) <= d);
+  const count = (arr, k) => arr.filter(l => l.kind === k).length;
+  const m30 = since(30), m90 = since(90);
+  const today = new Date().toISOString().slice(0, 10), from = new Date(Date.now() - 90 * DAY).toISOString().slice(0, 10);
+  return `<header class="page-h"><div><h1>Reports</h1><p class="muted">Export for the office, clients or insurance.</p></div></header>
+  <div class="stats">
+    <div class="stat"><span class="muted small">Faults · 30 days</span><b>${count(m30, 'Fault')}</b></div>
+    <div class="stat"><span class="muted small">Repairs · 30 days</span><b>${count(m30, 'Repair')}</b></div>
+    <div class="stat"><span class="muted small">Services · 90 days</span><b>${count(m90, 'Service')}</b></div>
+    <div class="stat"><span class="muted small">Faulty over ${CFG.FAULT_ALERT_DAYS} d</span><b>${longFaults().length}</b></div>
+  </div>
+  <div class="grid2">
+    <section class="card"><h2>Maintenance log</h2>
+      <form data-form="export-logs"><div class="fgrid"><div class="field"><label>From</label><input type="date" name="from" value="${from}"></div><div class="field"><label>To</label><input type="date" name="to" value="${today}"></div></div>
+      <button class="btn">${ic('download')} Download CSV</button></form></section>
+    <section class="card"><h2>Faults</h2><p class="muted small" style="margin-bottom:14px">Everything currently faulty, in repair or out of service, with how long and the latest note.</p>
+      <div class="row"><button class="btn" data-act="print-faults">${ic('print')} Fault report (PDF)</button><button class="btn" data-act="export" data-what="faults">${ic('download')} CSV</button></div></section>
+    <section class="card"><h2>Inventory</h2><p class="muted small" style="margin-bottom:14px">Every item with status, hours and location.</p><button class="btn" data-act="export" data-what="inventory">${ic('download')} Download CSV</button></section>
+    <section class="card"><h2>Service due</h2><p class="muted small" style="margin-bottom:14px">All scheduled tasks with due dates and hours left.</p><button class="btn" data-act="export" data-what="due">${ic('download')} Download CSV</button></section>
+  </div>`;
+}
+
+/* ---------- team ---------- */
+function vTeam() {
+  const ps = [...S.profiles].sort((a, b) => (a.role === 'pending' ? -1 : 0) - (b.role === 'pending' ? -1 : 0) || String(a.name).localeCompare(String(b.name)));
+  return `<header class="page-h"><div><h1>Team</h1><p class="muted">${isAdmin() ? 'New people create an account from the sign-in page, then show up here as Pending for you to approve.' : 'People with access to this log.'}</p></div></header>
+  <section class="card"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Name</th><th class="hide-m">Email</th><th>Access</th><th class="hide-m">Joined</th></tr></thead><tbody>
+  ${ps.map(p => `<tr><td>${h(p.name)}${p.id === S.user.id ? ' <span class="muted small">(you)</span>' : ''}</td><td class="hide-m muted">${h(p.email)}</td>
+    <td>${isAdmin() && p.id !== S.user.id ? `<select data-role-for="${p.id}" style="width:auto;min-width:140px">${[['pending','Pending'],['tech','Technician'],['admin','Admin']].map(([v, l]) => `<option value="${v}" ${p.role === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`
+      : `<span class="pill ${p.role === 'pending' ? 'd-soon' : 'd-ok'}">${p.role === 'admin' ? 'Admin' : p.role === 'tech' ? 'Technician' : 'Pending'}</span>`}</td>
+    <td class="hide-m muted small">${fmtDate(p.created_at)}</td></tr>`).join('')}
+  </tbody></table></div></section>
+  <section class="card"><h2>Roles</h2><ul class="list small">
+    <li><strong style="width:100px">Technician</strong><span class="muted">Scan, add and edit items, log faults/repairs/services, add schedules and manuals.</span></li>
+    <li><strong style="width:100px">Admin</strong><span class="muted">Everything above, plus approve people and delete items, entries, schedules and manuals.</span></li></ul></section>`;
+}
+
+/* ============================================================
+   MODALS & FORMS
+   ============================================================ */
+function openModal(title, body) { $('#modal-title').textContent = title; $('#modal-body').innerHTML = body; $('#modal').classList.add('open'); setTimeout(() => $('#modal-body input:not([type=hidden]):not([type=file]),#modal-body select,#modal-body textarea')?.focus(), 30); }
+function closeModal() { $('#modal').classList.remove('open'); $('#modal-body').innerHTML = ''; }
+const uniq = arr => [...new Set(arr.filter(Boolean).map(s => String(s).trim()))].sort();
+const datalists = () => `
+  <datalist id="dl-make">${uniq([...S.assets.map(a => a.make), ...S.manuals.map(m => m.make)]).map(v => `<option value="${h(v)}">`).join('')}</datalist>
+  <datalist id="dl-model">${uniq([...S.assets.map(a => a.model), ...S.manuals.map(m => m.model)]).map(v => `<option value="${h(v)}">`).join('')}</datalist>
+  <datalist id="dl-loc">${uniq(S.assets.map(a => a.location)).map(v => `<option value="${h(v)}">`).join('')}</datalist>
+  <datalist id="dl-tag">${S.assets.map(a => `<option value="${h(a.tag)}">${h(a.model)}</option>`).join('')}</datalist>`;
+
+function assetModal(a, opts = {}) {
+  const v = a || { tag: opts.tag || '', category: 'Fixture', status: 'OK' };
+  openModal(a ? 'Edit ' + a.tag : 'Add item', `${opts.notice ? `<div class="note">${opts.notice}</div>` : ''}
+  <form data-form="asset">${datalists()}<input type="hidden" name="id" value="${h(a?.id || '')}">
+    <div class="fgrid">
+      <div class="field"><label>Asset tag (QR code value)</label><input name="tag" required value="${h(v.tag)}" class="mono" autocapitalize="characters"></div>
+      <div class="field"><label>Serial number</label><input name="serial" value="${h(v.serial)}" class="mono"></div>
+      <div class="field"><label>Type</label><select name="category">${CATS.map(c => `<option ${v.category === c ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
+      <div class="field"><label>Status</label><select name="status">${STATUSES.map(s => `<option ${v.status === s ? 'selected' : ''}>${s}</option>`).join('')}</select></div>
+      <div class="field"><label>Make</label><input name="make" list="dl-make" value="${h(v.make)}" placeholder="e.g. Robe"></div>
+      <div class="field"><label>Model</label><input name="model" list="dl-model" value="${h(v.model)}" placeholder="e.g. MegaPointe"></div>
+      <div class="field"><label>Location</label><input name="location" list="dl-loc" value="${h(v.location)}" placeholder="e.g. Rack 3"></div>
+      <div class="field"><label>Hours (lamp / run)</label><input name="hours" type="number" step="any" min="0" value="${h(v.hours)}"></div>
+      <div class="field full"><label>Notes</label><textarea name="notes" placeholder="Firmware, mods, anything worth knowing">${h(v.notes)}</textarea></div>
+    </div>
+    <div class="modal-f"><button type="button" class="btn" data-act="modal-close">Cancel</button><button class="btn primary">${a ? 'Save' : 'Add item'}</button></div>
+  </form>`);
+}
+async function submitAsset(f) {
+  const fd = Object.fromEntries(new FormData(f)); const id = fd.id; delete fd.id;
+  for (const k of ['tag','serial','make','model','location','notes']) fd[k] = (fd[k] || '').trim();
+  fd.hours = fd.hours === '' ? null : Number(fd.hours);
+  const old = id ? assetById(id) : null;
+  if (old) {
+    const changed = fd.status !== old.status;
+    const patch = { ...fd, updated_at: new Date().toISOString(), updated_by: S.user.id };
+    if (changed) Object.assign(patch, statusPatch(old, fd.status)); else delete patch.status;
+    const saved = await api.update('assets', id, patch); Object.assign(old, saved);
+    if (changed) {
+      const l = await api.insert('logs', { asset_id: id, kind: 'Note', title: `Status changed to ${fd.status}`, details: '', photos: [], status_after: fd.status, created_by: S.user.id });
+      S.logs.unshift(l);
+    }
+    toast('Saved'); closeModal(); render();
+  } else {
+    const row = { ...fd, ...statusPatch(null, fd.status), updated_by: S.user.id };
+    const saved = await api.insert('assets', row); S.assets.push(saved);
+    toast('Item added'); closeModal(); location.hash = '#/asset/' + saved.id;
+  }
+}
+
+function logModal(assetId, pre = {}) {
+  const a = assetById(assetId); if (!a) return;
+  const kind = pre.kind || (BAD.includes(a.status) ? 'Repair' : 'Inspection');
+  const scheds = S.schedules.filter(s => scheduleTargets(s).some(x => x.id === a.id));
+  const statusFor = k => k === 'Fault' ? (BAD.includes(a.status) ? a.status : 'Faulty') : k === 'Repair' ? 'OK' : a.status;
+  openModal(`Log entry — ${a.tag}`, `<form data-form="log"><input type="hidden" name="asset_id" value="${a.id}">
+    <div class="fgrid">
+      <div class="field"><label>Type</label><select name="kind">${KINDS.map(k => `<option ${k === kind ? 'selected' : ''}>${k}</option>`).join('')}</select></div>
+      <div class="field"><label>Status after this</label><select name="status_after">${STATUSES.map(s => `<option ${s === (pre.status || statusFor(kind)) ? 'selected' : ''}>${s}</option>`).join('')}</select></div>
+      <div class="field full" id="sched-field" ${kind === 'Service' && scheds.length ? '' : 'hidden'}><label>Scheduled task completed</label><select name="schedule_id"><option value="">— Not a scheduled task —</option>${scheds.map(s => `<option value="${s.id}" ${pre.schedule_id === s.id ? 'selected' : ''}>${h(s.task)}</option>`).join('')}</select></div>
+      <div class="field full"><label>Summary</label><input name="title" required value="${h(pre.title || '')}" placeholder="${kind === 'Fault' ? 'e.g. Tilt stalls, colour wheel stuck' : 'What was done'}"></div>
+      <div class="field full"><label>Details</label><textarea name="details" placeholder="Symptoms, tests, findings, what fixed it"></textarea></div>
+      <div class="field"><label>Parts used</label><input name="parts" placeholder="e.g. Lamp x1, fan x2"></div>
+      <div class="field"><label>Hours reading</label><input name="hours_at" type="number" step="any" min="0" value="${h(a.hours ?? '')}"></div>
+      <div class="field full"><label>Photos</label><input name="photos" type="file" accept="image/*" multiple></div>
+    </div>
+    <div class="modal-f"><button type="button" class="btn" data-act="modal-close">Cancel</button><button class="btn primary">Save entry</button></div></form>`);
+  $('#modal-body [name=kind]').dataset.cur = a.status;
+}
+async function submitLog(f) {
+  const fd = new FormData(f); const a = assetById(fd.get('asset_id'));
+  const files = [...f.querySelector('[name=photos]').files];
+  const photos = [];
+  for (const file of files) { const blob = await compressImage(file); photos.push(await api.upload('photos', blob, (file.name || 'photo').replace(/\.\w+$/, '') + '.jpg')); }
+  const hoursRaw = fd.get('hours_at'); const hours = hoursRaw === '' ? null : Number(hoursRaw);
+  const kind = fd.get('kind'), status_after = fd.get('status_after');
+  const row = { asset_id: a.id, kind, title: fd.get('title').trim(), details: fd.get('details').trim(), parts: fd.get('parts').trim(),
+    hours_at: hours, status_after: status_after !== a.status || kind === 'Fault' || kind === 'Repair' ? status_after : null,
+    schedule_id: kind === 'Service' ? (fd.get('schedule_id') || null) : null, photos, created_by: S.user.id };
+  const log = await api.insert('logs', row); S.logs.unshift(log);
+  const patch = {};
+  if (status_after !== a.status) Object.assign(patch, statusPatch(a, status_after));
+  if (hours != null && (a.hours == null || a.hours === '' || hours !== Number(a.hours))) patch.hours = hours;
+  if (Object.keys(patch).length) { patch.updated_at = new Date().toISOString(); patch.updated_by = S.user.id; Object.assign(a, await api.update('assets', a.id, patch)); }
+  toast('Entry saved'); closeModal(); render();
+}
+
+function schedModal(d = {}) {
+  const a = d.aid && assetById(d.aid);
+  openModal('Add service schedule', `<form data-form="sched">${datalists()}
+    <div class="field"><label>Applies to</label><select name="scope"><option value="model" ${a ? '' : 'selected'}>Every item of a model</option><option value="asset" ${a ? 'selected' : ''}>One specific item</option></select></div>
+    <div class="fgrid" id="scope-model" ${a ? 'hidden' : ''}><div class="field"><label>Make</label><input name="make" list="dl-make" value="${h(a?.make || '')}"></div><div class="field"><label>Model</label><input name="model" list="dl-model" value="${h(a?.model || '')}"></div></div>
+    <div class="field" id="scope-asset" ${a ? '' : 'hidden'}><label>Asset tag</label><input name="tag" list="dl-tag" value="${h(a?.tag || '')}" class="mono"></div>
+    <div class="field"><label>Task</label><input name="task" required placeholder="e.g. Clean optics & fans, Lamp change, Software update"></div>
+    <div class="fgrid"><div class="field"><label>Every … days</label><input name="interval_days" type="number" min="1" step="1" placeholder="e.g. 180"></div><div class="field"><label>and/or every … hours</label><input name="interval_hours" type="number" min="1" step="any" placeholder="e.g. 1500"></div></div>
+    <p class="muted small" style="margin-bottom:12px">If you set both, it's due at whichever comes first. Hours use each item's hours reading.</p>
+    <div class="modal-f"><button type="button" class="btn" data-act="modal-close">Cancel</button><button class="btn primary">Add schedule</button></div></form>`);
+}
+async function submitSched(f) {
+  const fd = Object.fromEntries(new FormData(f));
+  const row = { task: fd.task.trim(), interval_days: fd.interval_days ? parseInt(fd.interval_days) : null, interval_hours: fd.interval_hours ? Number(fd.interval_hours) : null };
+  if (!row.interval_days && !row.interval_hours) throw new Error('Set an interval in days, hours, or both.');
+  if (fd.scope === 'asset') {
+    const a = S.assets.find(x => norm(x.tag) === norm(fd.tag)); if (!a) throw new Error('No item with that asset tag.');
+    row.asset_id = a.id;
+  } else {
+    if (!fd.make.trim() || !fd.model.trim()) throw new Error('Enter the make and model.');
+    row.make = fd.make.trim(); row.model = fd.model.trim();
+    if (!scheduleTargets(row).length && !confirm(`No items match ${row.make} ${row.model} yet. Add the schedule anyway?`)) return;
+  }
+  S.schedules.unshift(await api.insert('schedules', row)); toast('Schedule added'); closeModal(); render();
+}
+
+function manualModal(d = {}) {
+  openModal('Add manual', `<form data-form="manual">${datalists()}
+    <div class="fgrid"><div class="field"><label>Make</label><input name="make" list="dl-make" required value="${h(d.make || '')}"></div><div class="field"><label>Model (blank = all from this make)</label><input name="model" list="dl-model" value="${h(d.model || '')}"></div></div>
+    <div class="field"><label>Title</label><input name="title" required placeholder="e.g. Service manual v2.1"></div>
+    <div class="field"><label>Upload PDF</label><input name="file" type="file" accept="application/pdf,image/*"></div>
+    <div class="field"><label>…or link</label><input name="url" type="url" placeholder="https://"></div>
+    ${DEMO ? '<p class="muted small" style="margin-bottom:12px">Demo mode keeps uploads in your browser, which only holds a few MB. Links are better for testing.</p>' : ''}
+    <div class="modal-f"><button type="button" class="btn" data-act="modal-close">Cancel</button><button class="btn primary">Add manual</button></div></form>`);
+}
+async function submitManual(f) {
+  const fd = new FormData(f); const file = fd.get('file'); const url = fd.get('url').trim();
+  if ((!file || !file.size) && !url) throw new Error('Upload a file or paste a link.');
+  const row = { make: fd.get('make').trim(), model: fd.get('model').trim(), title: fd.get('title').trim(), url: url || null, file_path: null, created_by: S.user.id };
+  if (file && file.size) row.file_path = await api.upload('manuals', file, file.name);
+  S.manuals.unshift(await api.insert('manuals', row)); toast('Manual added'); closeModal(); render();
+}
+async function openFile(bucket, path) {
+  const w = window.open('', '_blank');
+  try { const url = await api.fileUrl(bucket, path); if (!url) throw new Error('File not found');
+    if (url.startsWith('data:')) { w.document.write(`<title>File</title><body style="margin:0;background:#111"><iframe src="${url}" style="border:0;width:100vw;height:100vh"></iframe>`); }
+    else w.location = url;
+  } catch (e) { w?.close(); toast(errMsg(e), 'bad'); }
+}
+async function openManual(id) {
+  const m = S.manuals.find(x => x.id === id); if (!m) return;
+  if (m.file_path) return openFile('manuals', m.file_path);
+  window.open(m.url, '_blank', 'noopener');
+}
+
+/* ---------- deletes ---------- */
+async function del(table, id, msg, after) {
+  if (!confirm(msg)) return;
+  try { await api.remove(table, id); S[table] = S[table].filter(r => r.id !== id); after?.(); toast('Deleted'); render(); } catch (e) { toast(errMsg(e), 'bad'); }
+}
+
+/* ---------- exports & printing ---------- */
+function toCSV(rows, cols) {
+  const esc = v => { v = v == null ? '' : String(v); return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+  return [cols.map(c => esc(c[0])).join(','), ...rows.map(r => cols.map(c => esc(c[1](r))).join(','))].join('\r\n');
+}
+function downloadText(name, text) {
+  const u = URL.createObjectURL(new Blob(['﻿' + text], { type: 'text/csv;charset=utf-8' }));
+  const l = document.createElement('a'); l.href = u; l.download = name; document.body.appendChild(l); l.click(); l.remove(); setTimeout(() => URL.revokeObjectURL(u), 2000);
+}
+const stamp = () => new Date().toISOString().slice(0, 10);
+const tagOf = id => assetById(id)?.tag || '';
+function exportCSV(what, opts = {}) {
+  if (what === 'inventory') downloadText(`inventory-${stamp()}.csv`, toCSV(filteredAssetsAll(), [
+    ['Asset tag', a => a.tag], ['Serial', a => a.serial], ['Type', a => a.category], ['Make', a => a.make], ['Model', a => a.model], ['Location', a => a.location],
+    ['Status', a => a.status], ['Faulty since', a => a.faulty_since ? fmtDate(a.faulty_since) : ''], ['Days faulty', a => a.faulty_since ? daysSince(a.faulty_since) : ''], ['Hours', a => a.hours], ['Notes', a => a.notes]]));
+  if (what === 'faults') downloadText(`faults-${stamp()}.csv`, toCSV(faultRows(), [
+    ['Asset tag', a => a.tag], ['Make', a => a.make], ['Model', a => a.model], ['Status', a => a.status], ['Faulty since', a => fmtDate(a.faulty_since)], ['Days', a => a.faulty_since ? daysSince(a.faulty_since) : ''],
+    ['Over limit', a => a.faulty_since && daysSince(a.faulty_since) >= CFG.FAULT_ALERT_DAYS ? 'YES' : ''], ['Latest note', a => lastActivity(a)?.title || ''], ['Location', a => a.location]]));
+  if (what === 'due') downloadText(`service-due-${stamp()}.csv`, toCSV(dueList(), [
+    ['Asset tag', d => d.a.tag], ['Model', d => d.a.model], ['Task', d => d.s.task], ['Status', d => d.state], ['Due date', d => d.dueDate ? fmtDate(d.dueDate) : ''],
+    ['Days left', d => d.daysLeft ?? ''], ['Hours left', d => d.hoursLeft ?? ''], ['Last done', d => d.last ? fmtDate(d.last.created_at) : 'Never']]));
+  if (what === 'logs') {
+    const from = opts.from ? new Date(opts.from + 'T00:00:00') : new Date(0), to = opts.to ? new Date(opts.to + 'T23:59:59') : new Date();
+    const rows = S.logs.filter(l => { const d = new Date(l.created_at); return d >= from && d <= to; }).sort(byNewest);
+    downloadText(`maintenance-log-${stamp()}.csv`, toCSV(rows, [
+      ['Date', l => fmtDT(l.created_at)], ['Asset tag', l => tagOf(l.asset_id)], ['Model', l => assetById(l.asset_id)?.model || ''], ['Type', l => l.kind], ['Summary', l => l.title],
+      ['Details', l => l.details], ['Parts', l => l.parts], ['Hours', l => l.hours_at], ['Status after', l => l.status_after], ['By', l => nameOf(l.created_by)], ['Photos', l => l.photos?.length || 0]]));
+    toast(`${rows.length} entries exported`);
+  }
+}
+const filteredAssetsAll = () => [...S.assets].sort((x, y) => String(x.tag).localeCompare(String(y.tag), undefined, { numeric: true }));
+const faultRows = () => S.assets.filter(a => BAD.includes(a.status)).sort((x, y) => new Date(x.faulty_since || 0) - new Date(y.faulty_since || 0));
+function printDoc(html) { $('#print').innerHTML = html; setTimeout(() => window.print(), 50); }
+function printAsset(a) {
+  const logs = S.logs.filter(l => l.asset_id === a.id).sort(byNewest);
+  printDoc(`<h1>${h(a.tag)} — ${h(a.make)} ${h(a.model)}</h1>
+  <div class="sub">Serial ${h(a.serial || '—')} · ${h(a.category)} · ${h(a.location || '—')} · Status: ${h(a.status)}${a.hours != null && a.hours !== '' ? ' · ' + h(a.hours) + ' h' : ''}<br>Printed ${fmtDT(new Date())} by ${h(S.profile.name)}</div>
+  <h2>Maintenance history (${logs.length})</h2>
+  <table><thead><tr><th>Date</th><th>Type</th><th>Summary & details</th><th>Parts</th><th>Hours</th><th>Status</th><th>By</th></tr></thead><tbody>
+  ${logs.map(l => `<tr><td>${fmtDT(l.created_at)}</td><td>${h(l.kind)}</td><td><b>${h(l.title)}</b>${l.details ? '<br>' + h(l.details).replace(/\n/g, '<br>') : ''}</td><td>${h(l.parts)}</td><td>${h(l.hours_at ?? '')}</td><td>${h(l.status_after || '')}</td><td>${h(nameOf(l.created_by))}</td></tr>`).join('') || '<tr><td colspan="7">No entries</td></tr>'}
+  </tbody></table>`);
+}
+function printFaults() {
+  const rows = faultRows();
+  printDoc(`<h1>Fault report</h1><div class="sub">${rows.length} items faulty, in repair or out of service · Printed ${fmtDT(new Date())}</div>
+  <table><thead><tr><th>Tag</th><th>Item</th><th>Status</th><th>Since</th><th>Days</th><th>Latest note</th><th>Location</th></tr></thead><tbody>
+  ${rows.map(a => { const l = lastActivity(a); const d = a.faulty_since ? daysSince(a.faulty_since) : ''; return `<tr><td>${h(a.tag)}</td><td>${h(a.make)} ${h(a.model)}</td><td>${h(a.status)}</td><td>${fmtDate(a.faulty_since)}</td><td>${d}${d >= CFG.FAULT_ALERT_DAYS ? ' ⚠' : ''}</td><td>${l ? h(l.title) : ''}</td><td>${h(a.location || '')}</td></tr>`; }).join('') || '<tr><td colspan="7">Nothing faulty</td></tr>'}
+  </tbody></table>`);
+}
+
+/* ============================================================
+   EVENTS
+   ============================================================ */
+const ACT = {
+  'go': d => { location.hash = d.href; },
+  'nav-toggle': () => document.body.classList.toggle('nav-open'),
+  'nav-close': () => document.body.classList.remove('nav-open'),
+  'modal-close': closeModal,
+  'refresh': async () => { try { await loadAll(); render(); toast('Up to date'); } catch (e) { toast(errMsg(e), 'bad'); } },
+  'recheck': () => boot(),
+  'signout': () => api.signOut(),
+  'auth-tab': d => { S.authTab = d.tab; render(); },
+  'forgot': async () => {
+    const email = $('[name=email]')?.value || prompt('Your email address:'); if (!email) return;
+    try { await api.resetPw(email); toast('Check your email for a reset link'); } catch (e) { toast(errMsg(e), 'bad'); }
+  },
+  'cam-start': camStart, 'cam-stop': camStop,
+  'asset-new': () => assetModal(),
+  'asset-edit': d => assetModal(assetById(d.id)),
+  'asset-del': d => del('assets', d.id, 'Delete this item and its whole history? This can\'t be undone.', () => { S.logs = S.logs.filter(l => l.asset_id !== d.id); S.schedules = S.schedules.filter(s => s.asset_id !== d.id); location.hash = '#/assets'; }),
+  'log-new': d => logModal(d.id, { kind: d.kind }),
+  'log-del': d => del('logs', d.id, 'Delete this log entry?'),
+  'done': d => { const s = S.schedules.find(x => x.id === d.sid); logModal(d.aid, { kind: 'Service', schedule_id: s.id, title: s.task }); },
+  'sched-new': d => schedModal(d),
+  'sched-del': d => del('schedules', d.id, 'Delete this schedule? Past service entries stay in the history.'),
+  'manual-new': d => manualModal(d),
+  'manual-open': d => openManual(d.id),
+  'manual-del': d => del('manuals', d.id, 'Delete this manual?'),
+  'photo-open': d => openFile('photos', d.p),
+  'print-asset': d => printAsset(assetById(d.id)),
+  'print-faults': printFaults,
+  'export': d => exportCSV(d.what),
+  'due-tab': d => { S.dueTab = d.tab; render(); },
+};
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-act]'); if (!t) return;
+  if (t.tagName === 'A' && t.getAttribute('href') === '#') e.preventDefault();
+  if (t.id === 'modal' && e.target !== t) return;
+  ACT[t.dataset.act]?.(t.dataset, t, e);
+});
+$('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#modal.open')) closeModal(); });
+
+const FORMS = {
+  async signin(f) { const fd = new FormData(f); await api.signIn(fd.get('email').trim(), fd.get('password')); },
+  async signup(f) {
+    const fd = new FormData(f); const r = await api.signUp(fd.get('name').trim(), fd.get('email').trim(), fd.get('password'));
+    if (!r.session) { S.authTab = 'signin'; render(); toast('Account created — check your email to confirm, then sign in.'); }
+  },
+  async newpw(f) { await api.setPw(new FormData(f).get('password')); S.recovery = false; toast('Password updated'); history.replaceState(null, '', location.pathname + '#/dashboard'); await boot(); },
+  async lookup(f) { lookup(new FormData(f).get('code')); f.reset(); },
+  asset: submitAsset, log: submitLog, sched: submitSched, manual: submitManual,
+  async 'export-logs'(f) { const fd = new FormData(f); exportCSV('logs', { from: fd.get('from'), to: fd.get('to') }); },
+};
+document.addEventListener('submit', async e => {
+  const f = e.target; const fn = FORMS[f.dataset.form]; if (!fn) return;
+  e.preventDefault();
+  const btn = f.querySelector('button:not([type=button])'); const label = btn?.innerHTML;
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  try { await fn(f); }
+  catch (err) { const box = $('#auth-err'); if (box && f.closest('.auth')) box.textContent = errMsg(err); else toast(errMsg(err), 'bad'); }
+  finally { if (btn && btn.isConnected) { btn.disabled = false; btn.innerHTML = label; } }
+});
+document.addEventListener('input', e => {
+  const k = e.target.dataset.filter; if (!k) return;
+  if (k === 'manualQ') { S.manualQ = e.target.value; const keep = e.target.selectionStart; render(); const i = $('[data-filter=manualQ]'); i.focus(); i.setSelectionRange(keep, keep); return; }
+  S.filter[k] = e.target.value; $('#asset-list').innerHTML = assetTable();
+});
+document.addEventListener('change', async e => {
+  const t = e.target;
+  if (t.dataset.filter && t.tagName === 'SELECT') { S.filter[t.dataset.filter] = t.value; $('#asset-list').innerHTML = assetTable(); return; }
+  if (t.dataset.roleFor) {
+    try { const p = await api.update('profiles', t.dataset.roleFor, { role: t.value }); Object.assign(S.profiles.find(x => x.id === p.id), p); toast('Access updated'); render(); }
+    catch (err) { toast(errMsg(err), 'bad'); render(); }
+  }
+  if (t.name === 'kind' && t.closest('[data-form=log]')) {
+    const f = t.closest('form'), cur = t.dataset.cur;
+    const st = t.value === 'Fault' ? (BAD.includes(cur) ? cur : 'Faulty') : t.value === 'Repair' ? 'OK' : cur;
+    f.status_after.value = st;
+    $('#sched-field').hidden = !(t.value === 'Service' && f.schedule_id.options.length > 1);
+  }
+  if (t.name === 'scope' && t.closest('[data-form=sched]')) { $('#scope-model').hidden = t.value !== 'model'; $('#scope-asset').hidden = t.value !== 'asset'; }
+});
+document.addEventListener('visibilitychange', async () => {
+  if (document.hidden || DEMO || !S.profile || S.profile.role === 'pending' || $('#modal.open') || qr) return;
+  try { await loadAll(); render(); } catch {}
+});
+
+/* ---------- start ---------- */
+if (sb) {
+  sb.auth.onAuthStateChange((ev, session) => {
+    if (ev === 'PASSWORD_RECOVERY') { S.recovery = true; setTimeout(render, 0); return; }
+    if (ev === 'SIGNED_IN' && session?.user?.id !== S.user?.id) setTimeout(boot, 0);
+    if (ev === 'SIGNED_OUT') { Object.assign(S, { user:null, profile:null, assets:[], logs:[], schedules:[], manuals:[], profiles:[] }); setTimeout(render, 0); }
+  });
+}
+if (!DEMO && !window.supabase) { $('#app').innerHTML = '<div class="center muted">Could not load the database library. Check your internet connection and reload.</div>'; }
+else boot();
+</script>
+</body>
+</html>

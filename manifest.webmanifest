@@ -1,0 +1,10 @@
+{
+  "name": "BenchLog",
+  "short_name": "BenchLog",
+  "description": "Lighting fixture and console maintenance log",
+  "start_url": "./#/dashboard",
+  "display": "standalone",
+  "background_color": "#0e1014",
+  "theme_color": "#0e1014",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
