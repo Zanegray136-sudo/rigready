@@ -180,3 +180,76 @@ on conflict (id) do nothing;
 create policy "files: read"   on storage.objects for select to authenticated using (bucket_id in ('photos','manuals') and public.is_member());
 create policy "files: upload" on storage.objects for insert to authenticated with check (bucket_id in ('photos','manuals') and public.is_member());
 create policy "files: delete" on storage.objects for delete to authenticated using (bucket_id in ('photos','manuals') and public.is_admin());
+
+-- ---------- Spare parts ----------
+create table if not exists public.parts (
+  id             uuid primary key default gen_random_uuid(),
+  name           text not null,
+  make           text,
+  part_number    text,          -- manufacturer / fixture part number
+  supplier_code  text,          -- e.g. ShowTech code
+  fits           text,          -- which models it fits
+  quantity       int  not null default 0 check (quantity >= 0),
+  min_qty        int  not null default 0 check (min_qty >= 0),   -- low-stock alert level (0 = off)
+  condition      text,
+  unit_price     numeric,
+  location       text,
+  notes          text,
+  created_at     timestamptz not null default now(),
+  updated_at     timestamptz not null default now()
+);
+
+-- Every stock movement: check-outs (negative), new stock (positive), returns, corrections
+create table if not exists public.part_moves (
+  id           uuid primary key default gen_random_uuid(),
+  part_id      uuid not null references public.parts(id) on delete cascade,
+  change       int  not null check (change <> 0),
+  kind         text not null check (kind in ('checkout','restock','return','adjust')),
+  person_name  text,                                                 -- who took it
+  person_id    uuid references public.profiles(id) on delete set null,
+  asset_id     uuid references public.assets(id) on delete set null, -- fixture it went into
+  notes        text,
+  created_by   uuid references public.profiles(id) on delete set null default auth.uid(),
+  created_at   timestamptz not null default now()
+);
+create index if not exists part_moves_part_idx  on public.part_moves (part_id, created_at desc);
+create index if not exists part_moves_asset_idx on public.part_moves (asset_id);
+
+-- Stock levels follow the movements, and can never go below zero
+create or replace function public.part_moves_apply() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare q int;
+begin
+  if tg_op = 'INSERT' then
+    update public.parts set quantity = quantity + new.change, updated_at = now() where id = new.part_id returning quantity into q;
+    return new;
+  else
+    update public.parts set quantity = quantity - old.change, updated_at = now() where id = old.part_id;
+    return old;
+  end if;
+exception when check_violation then
+  raise exception 'Not enough in stock for that.' using errcode = '23514';
+end $$;
+drop trigger if exists part_moves_stock on public.part_moves;
+create trigger part_moves_stock after insert or delete on public.part_moves
+  for each row execute function public.part_moves_apply();
+
+grant select, insert, update, delete on public.parts, public.part_moves to authenticated;
+alter table public.parts      enable row level security;
+alter table public.part_moves enable row level security;
+
+drop policy if exists "parts: read"   on public.parts;
+drop policy if exists "parts: add"    on public.parts;
+drop policy if exists "parts: edit"   on public.parts;
+drop policy if exists "parts: delete" on public.parts;
+create policy "parts: read"   on public.parts for select to authenticated using (public.is_member());
+create policy "parts: add"    on public.parts for insert to authenticated with check (public.is_member());
+create policy "parts: edit"   on public.parts for update to authenticated using (public.is_member());
+create policy "parts: delete" on public.parts for delete to authenticated using (public.is_admin());
+
+drop policy if exists "moves: read"   on public.part_moves;
+drop policy if exists "moves: add"    on public.part_moves;
+drop policy if exists "moves: delete" on public.part_moves;
+create policy "moves: read"   on public.part_moves for select to authenticated using (public.is_member());
+create policy "moves: add"    on public.part_moves for insert to authenticated with check (public.is_member() and created_by = auth.uid());
+create policy "moves: delete" on public.part_moves for delete to authenticated using (public.is_admin());

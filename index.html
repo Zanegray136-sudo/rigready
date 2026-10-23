@@ -258,6 +258,7 @@ const P = {
   wrench:'<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/>',
   book:'<path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 21V5M8 7h7"/>',
   chart:'<path d="M5 20V11M11 20V5M17 20v-6M3 20h18"/>',
+  parts:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1L7 17M17 7l2.1-2.1"/>',
   users:'<circle cx="9" cy="8" r="3.5"/><path d="M2 20c0-3.5 3-6 7-6s7 2.5 7 6"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M22 20c0-3-2-5.2-5-5.8"/>',
   plus:'<path d="M12 5v14M5 12h14"/>', x:'<path d="M6 6l12 12M18 6L6 18"/>', menu:'<path d="M4 7h16M4 12h16M4 17h16"/>',
   alert:'<path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18v.01"/>',
@@ -328,6 +329,7 @@ function supabaseApi() {
   function friendly(e) {
     if (e.code === '23505') return new Error('An item with that asset tag already exists.');
     if (e.code === '42501') return new Error("You don't have permission to do that.");
+    if (e.code === '23514' || /Not enough in stock/i.test(e.message || '')) return new Error('Not enough in stock for that.');
     return e;
   }
 }
@@ -338,9 +340,11 @@ function demoApi() {
     if (mem) return mem;
     try { const r = localStorage.getItem(KEY); if (r) mem = JSON.parse(r); } catch {}
     if (!mem) { mem = demoSeed(); save(); }
+    if (!mem.parts) { const x = demoParts(mem.assets); mem.parts = x.parts; mem.part_moves = x.part_moves; save(); }
     return mem;
   };
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(mem)); } catch { toast('Demo storage is full — big photos/manuals won\'t survive a reload', 'warn'); } };
+  const clone = v => v === undefined ? v : JSON.parse(JSON.stringify(v));
   const dupTag = (d, tag, id) => tag && d.assets.some(a => a.id !== id && norm(a.tag) === norm(tag));
   return {
     async session() { return { id: 'demo-admin', email: 'demo@example.com' }; },
@@ -348,18 +352,22 @@ function demoApi() {
     async signOut() {
       if (confirm('This is demo mode. Reset the demo data back to the sample items?')) { try { localStorage.removeItem(KEY); } catch {} mem = null; location.hash = '#/dashboard'; location.reload(); }
     },
-    async profile(id) { return read().profiles.find(p => p.id === id); },
-    async all(t) { return [...(read()[t] || [])].sort(byNewest); },
+    async profile(id) { return clone(read().profiles.find(p => p.id === id)); },
+    async all(t) { return clone(read()[t] || []).sort(byNewest); },
     async insert(t, row) {
       const d = read(); if (t === 'assets' && dupTag(d, row.tag)) throw new Error('An item with that asset tag already exists.');
-      const r = { id: uid(), created_at: new Date().toISOString(), ...row }; d[t].push(r); save(); return r;
+      if (t === 'part_moves') { const pt = d.parts.find(x => x.id === row.part_id); if (!pt || pt.quantity + row.change < 0) throw new Error('Not enough in stock for that.'); pt.quantity += row.change; }
+      const r = { id: uid(), created_at: new Date().toISOString(), ...row }; (d[t] = d[t] || []).push(r); save(); return clone(r);
     },
     async update(t, id, p) {
       const d = read(); if (t === 'assets' && dupTag(d, p.tag, id)) throw new Error('An item with that asset tag already exists.');
-      const i = d[t].findIndex(r => r.id === id); d[t][i] = { ...d[t][i], ...p }; save(); return d[t][i];
+      const i = d[t].findIndex(r => r.id === id); d[t][i] = { ...d[t][i], ...p }; save(); return clone(d[t][i]);
     },
     async remove(t, id) {
-      const d = read(); d[t] = d[t].filter(r => r.id !== id);
+      const d = read();
+      if (t === 'part_moves') { const m = d.part_moves.find(x => x.id === id); const pt = m && d.parts.find(x => x.id === m.part_id); if (pt) pt.quantity -= m.change; }
+      if (t === 'parts') d.part_moves = d.part_moves.filter(m => m.part_id !== id);
+      d[t] = d[t].filter(r => r.id !== id);
       if (t === 'assets') { d.logs = d.logs.filter(l => l.asset_id !== id); d.schedules = d.schedules.filter(s => s.asset_id !== id); }
       save();
     },
@@ -416,7 +424,24 @@ function demoSeed() {
     { id:'demo-tech', name:'Sam (tech)', email:'sam@example.com', role:'tech', created_at: ago(300) },
     { id:'demo-new', name:'New starter', email:'new@example.com', role:'pending', created_at: ago(1) },
   ];
-  return { assets: a, schedules: s, logs, manuals, profiles, files: {} };
+  return { assets: a, schedules: s, logs, manuals, profiles, files: {}, ...demoParts(a) };
+}
+function demoParts(assets) {
+  const ago = d => new Date(Date.now() - d * DAY).toISOString();
+  const P = (name, make, part_number, supplier_code, quantity, unit_price, extra = {}) => ({ id: uid(), name, make, part_number, supplier_code, quantity, unit_price, min_qty: 0, condition: 'New', fits: '', location: '', notes: '', created_at: ago(300), updated_at: ago(5), ...extra });
+  const parts = [
+    P('MegaPointe lamp 470W', 'Robe', '', 'ZRBELMP470', 3, 389.00, { fits: 'MegaPointe', min_qty: 2, location: 'Parts shelf A' }),
+    P('MegaPointe pan/tilt driver board', 'Robe', '', 'ZRBEPCB118', 1, 214.50, { fits: 'MegaPointe' }),
+    P('MAC Aura XB zoom belt', 'Martin', '5040112-00', '', 4, 18.90, { fits: 'MAC Aura XB' }),
+    P('Sharpy lamp 189W', 'Clay Paky', '', 'ZCLPLMP189', 0, 165.00, { fits: 'Sharpy', min_qty: 2 }),
+    P('grandMA3 encoder', 'MA Lighting', '', 'ZMALGRA310', 2, 96.00, { fits: 'grandMA3 compact XT, grandMA3 light' }),
+  ];
+  const tag = t => assets.find(a => a.tag === t)?.id || null;
+  const part_moves = [
+    { id: uid(), part_id: parts[0].id, change: -1, kind: 'checkout', person_name: 'Sam (tech)', person_id: 'demo-tech', asset_id: tag('LX-0103'), notes: 'Lamp not striking', created_by: 'demo-tech', created_at: ago(11) },
+    { id: uid(), part_id: parts[2].id, change: -1, kind: 'checkout', person_name: 'Sam (tech)', person_id: 'demo-tech', asset_id: tag('LX-0211'), notes: '', created_by: 'demo-tech', created_at: ago(80) },
+  ];
+  return { parts, part_moves };
 }
 
 const api = DEMO ? demoApi() : supabaseApi();
@@ -425,12 +450,14 @@ const api = DEMO ? demoApi() : supabaseApi();
    STATE
    ============================================================ */
 const S = { booted:false, user:null, profile:null, recovery:false, authTab:'signin',
-  assets:[], logs:[], schedules:[], manuals:[], profiles:[],
-  filter:{ q:'', cat:'', status:'' }, dueTab:'due', manualQ:'' };
+  assets:[], logs:[], schedules:[], manuals:[], profiles:[], parts:[], part_moves:[], partsMissing:false,
+  filter:{ q:'', cat:'', status:'' }, dueTab:'due', manualQ:'', partQ:'', partMake:'' };
 
 async function loadAll() {
   const [assets, logs, schedules, manuals, profiles] = await Promise.all(['assets','logs','schedules','manuals','profiles'].map(t => api.all(t)));
   Object.assign(S, { assets, logs, schedules, manuals, profiles });
+  try { const [parts, part_moves] = await Promise.all([api.all('parts'), api.all('part_moves')]); Object.assign(S, { parts, part_moves, partsMissing: false }); }
+  catch { Object.assign(S, { parts: [], part_moves: [], partsMissing: true }); }
 }
 
 async function boot() {
@@ -513,7 +540,7 @@ function render() {
   if (!S.user) { app.innerHTML = vLogin(); return; }
   if (!S.profile || S.profile.role === 'pending') { app.innerHTML = vPending(); return; }
   if (r.p === 'tag') { lookup(r.arg, true); return; }
-  const views = { dashboard:vDashboard, scan:vScan, assets:vAssets, asset:() => vAsset(r.arg), schedules:vSchedules, manuals:vManuals, reports:vReports, team:vTeam };
+  const views = { parts:vParts, part:() => vPart(r.arg), dashboard:vDashboard, scan:vScan, assets:vAssets, asset:() => vAsset(r.arg), schedules:vSchedules, manuals:vManuals, reports:vReports, team:vTeam };
   app.innerHTML = shell(r.p, (views[r.p] || vDashboard)());
   document.body.classList.remove('nav-open');
   hydrateImages();
@@ -524,7 +551,7 @@ function shell(p, body) {
   const pending = isAdmin() ? S.profiles.filter(x => x.role === 'pending').length : 0;
   const over = dueList().filter(d => d.state === 'overdue').length;
   const lf = longFaults().length;
-  const item = (k, icn, label, badge) => `<a href="#/${k}" class="nav-i ${p === k || (k === 'assets' && p === 'asset') ? 'on' : ''}">${ic(icn)}<span>${label}</span>${badge ? `<em class="badge">${badge}</em>` : ''}</a>`;
+  const item = (k, icn, label, badge) => `<a href="#/${k}" class="nav-i ${p === k || ((k === 'assets' && p === 'asset') || (k === 'parts' && p === 'part')) ? 'on' : ''}">${ic(icn)}<span>${label}</span>${badge ? `<em class="badge">${badge}</em>` : ''}</a>`;
   return `${DEMO ? '<div class="demo-bar">Demo mode — sample data, saved only in this browser. Add your Supabase keys to config.js to go live with team log-ins.</div>' : ''}
   <div class="topbar"><button class="icon-btn" data-act="nav-toggle" aria-label="Menu">${ic('menu')}</button><span class="brand">${LOGO}${h(CFG.APP_NAME)}</span><a class="icon-btn" href="#/scan" aria-label="Scan">${ic('scan')}</a></div>
   <div class="layout">
@@ -535,6 +562,7 @@ function shell(p, body) {
         ${item('scan','scan','Scan')}
         ${item('assets','box','Items')}
         ${item('schedules','clock','Service schedule', over)}
+        ${item('parts','parts','Spare parts', S.parts.filter(isLow).length)}
         ${item('manuals','book','Manuals')}
         ${item('reports','chart','Reports')}
         ${item('team','users','Team', pending)}
@@ -782,6 +810,7 @@ function vAsset(id) {
       <section class="card"><div class="row" style="margin-bottom:10px"><h2 style="margin:0">Service</h2><span class="spacer"></span><button class="btn sm" data-act="sched-new" data-aid="${a.id}">${ic('plus')} Add</button></div>
         ${dues.length ? `<ul class="list">${dues.map(d => `<li><div style="flex:1;min-width:150px"><div>${h(d.s.task)}</div><div class="muted small">${d.s.asset_id ? 'This item' : 'All ' + h(d.s.model)} · ${dueText(d)}</div></div>${duePill(d)}<button class="btn sm" data-act="done" data-sid="${d.s.id}" data-aid="${a.id}">Done</button></li>`).join('')}</ul>` : '<p class="empty">No service schedule.</p>'}
       </section>
+      ${partsFittedCard(a)}
       <section class="card"><div class="row" style="margin-bottom:10px"><h2 style="margin:0">Manuals</h2><span class="spacer"></span><button class="btn sm" data-act="manual-new" data-make="${h(a.make)}" data-model="${h(a.model)}">${ic('plus')} Add</button></div>
         ${mans.length ? `<ul class="list">${mans.map(manualItem).join('')}</ul>` : `<p class="empty">No manuals for ${h(a.model || 'this model')}.</p>`}
       </section>
@@ -881,6 +910,189 @@ function vTeam() {
   <section class="card"><h2>Roles</h2><ul class="list small">
     <li><strong style="width:100px">Technician</strong><span class="muted">Scan, add and edit items, log faults/repairs/services, add schedules and manuals.</span></li>
     <li><strong style="width:100px">Admin</strong><span class="muted">Everything above, plus approve people and delete items, entries, schedules and manuals.</span></li></ul></section>`;
+}
+
+/* ---------- spare parts ---------- */
+const money = v => hasH(v) ? '$' + Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
+const isLow = pt => pt.quantity === 0 || (pt.min_qty > 0 && pt.quantity <= pt.min_qty);
+const partById = id => S.parts.find(x => x.id === id);
+const qtyPill = pt => `<span class="pill ${pt.quantity === 0 ? 's-faulty' : isLow(pt) ? 's-in-repair' : 's-ok'}">${pt.quantity}${pt.quantity === 0 ? ' · out' : isLow(pt) ? ' · low' : ''}</span>`;
+const MOVE = { checkout: 'Checked out', restock: 'Stock added', return: 'Returned', adjust: 'Count corrected' };
+const people = () => uniq([...S.profiles.filter(p => p.role !== 'pending').map(p => p.name), ...S.logs.map(l => l.tech_name), ...S.part_moves.map(m => m.person_name)]);
+function findAsset(t) {
+  t = String(t || '').trim(); if (!t) return null;
+  return S.assets.find(x => norm(x.tag) === norm(t)) || S.assets.find(x => x.serial && norm(x.serial) === norm(t)) || S.assets.find(x => codeKey(x.tag) === codeKey(t));
+}
+function partsMissingNote() {
+  return S.partsMissing ? `<div class="alert warn"><div class="alert-h">${ic('alert')} Spare parts isn't set up in the database yet</div><p class="small">Run <b>rigready-parts.sql</b> in Supabase → SQL Editor, then tap Refresh.</p></div>` : '';
+}
+function filteredParts() {
+  const q = norm(S.partQ);
+  return S.parts.filter(pt => (!S.partMake || pt.make === S.partMake) && (!q || [pt.name, pt.make, pt.part_number, pt.supplier_code, pt.fits, pt.location].some(v => norm(v).includes(q))))
+    .sort((a, b) => String(a.make || '').localeCompare(String(b.make || '')) || a.name.localeCompare(b.name));
+}
+function partTable() {
+  const rows = filteredParts();
+  if (!rows.length) return `<p class="empty">${S.parts.length ? 'No parts match.' : 'No parts yet.'}</p>`;
+  return `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Part</th><th class="hide-m">Make</th><th class="hide-m">Codes</th><th>In stock</th><th class="hide-m">Price</th><th></th></tr></thead><tbody>
+  ${rows.map(pt => `<tr class="click" data-act="go" data-href="#/part/${pt.id}"><td><div>${h(pt.name)}</div>${pt.fits ? `<div class="muted small">Fits ${h(pt.fits)}</div>` : ''}</td>
+    <td class="hide-m">${h(pt.make || '—')}</td><td class="hide-m mono small">${[pt.supplier_code, pt.part_number].filter(Boolean).map(h).join('<br>') || '—'}</td>
+    <td>${qtyPill(pt)}</td><td class="hide-m">${money(pt.unit_price)}</td>
+    <td style="text-align:right"><button class="btn sm" data-act="checkout" data-pid="${pt.id}" ${pt.quantity ? '' : 'disabled'}>Check out</button></td></tr>`).join('')}
+  </tbody></table></div>`;
+}
+function moveRow(m, showPart) {
+  const pt = partById(m.part_id), a = m.asset_id && assetById(m.asset_id);
+  const canReturn = m.kind === 'checkout' && !S.part_moves.some(x => x.kind === 'return' && x.notes === 'Return of ' + m.id);
+  return `<tr><td class="small">${fmtDT(m.created_at)}</td>${showPart ? `<td>${pt ? `<a href="#/part/${pt.id}" style="text-decoration:none">${h(pt.name)}</a>` : '—'}</td>` : `<td>${h(MOVE[m.kind] || m.kind)}</td>`}
+    <td><b style="color:${m.change < 0 ? 'var(--bad)' : 'var(--ok)'}">${m.change > 0 ? '+' : ''}${m.change}</b></td>
+    <td>${h(m.person_name || (m.kind === 'checkout' ? '—' : nameOf(m.created_by)))}</td>
+    <td>${a ? `<a href="#/asset/${a.id}" class="tag" style="text-decoration:none">${h(a.tag)}</a>` : '<span class="muted">—</span>'}</td>
+    <td class="hide-m muted small">${h(m.notes && !m.notes.startsWith('Return of ') ? m.notes : '')}</td>
+    <td style="text-align:right;white-space:nowrap">${!showPart && canReturn ? `<button class="btn sm" data-act="part-return" data-id="${m.id}" title="Part came back unused">Return</button>` : ''}${!showPart && isAdmin() ? `<button class="icon-btn" title="Undo (fixes a mistake, restores stock)" data-act="move-del" data-id="${m.id}">${ic('trash')}</button>` : ''}</td></tr>`;
+}
+function vParts() {
+  const units = S.parts.reduce((n, pt) => n + pt.quantity, 0);
+  const value = S.parts.reduce((n, pt) => n + (hasH(pt.unit_price) ? pt.quantity * pt.unit_price : 0), 0);
+  const low = S.parts.filter(isLow).length;
+  const outs = S.part_moves.filter(m => m.kind === 'checkout').sort(byNewest).slice(0, 15);
+  const makes = uniq(S.parts.map(pt => pt.make));
+  return `<header class="page-h"><div><h1>Spare parts</h1><p class="muted">Stock, prices and who took what for which fixture.</p></div>
+    <div class="row"><button class="btn" data-act="export" data-what="parts">${ic('download')} CSV</button><button class="btn" data-act="part-new">${ic('plus')} Add part</button><button class="btn primary" data-act="checkout">${ic('parts')} Check out</button></div></header>
+  ${partsMissingNote()}
+  <div class="stats">
+    <div class="stat"><span class="muted small">Parts listed</span><b>${S.parts.length}</b></div>
+    <div class="stat"><span class="muted small">Units in stock</span><b>${units}</b></div>
+    <div class="stat"><span class="muted small">Stock value (priced items)</span><b>${money(value)}</b></div>
+    <div class="stat ${low ? 'warn' : ''}"><span class="muted small">Low or out of stock</span><b>${low}</b></div>
+  </div>
+  <section class="card">
+    <div class="filters" style="grid-template-columns:1fr 200px"><input data-filter="partQ" placeholder="Search part, code, make, what it fits…" value="${h(S.partQ)}">
+      <select data-filter="partMake"><option value="">All makes</option>${makes.map(m => `<option ${S.partMake === m ? 'selected' : ''}>${h(m)}</option>`).join('')}</select></div>
+    <div id="part-list">${partTable()}</div>
+  </section>
+  <section class="card"><div class="row" style="margin-bottom:10px"><h2 style="margin:0">Recent check-outs</h2><span class="spacer"></span><button class="btn sm" data-act="export" data-what="moves">${ic('download')} All movements CSV</button></div>
+    ${outs.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Date</th><th>Part</th><th>Qty</th><th>Taken by</th><th>Fixture</th><th class="hide-m">Notes</th><th></th></tr></thead><tbody>${outs.map(m => moveRow(m, true)).join('')}</tbody></table></div>` : '<p class="empty">Nothing checked out yet.</p>'}
+  </section>`;
+}
+function vPart(id) {
+  const pt = partById(id);
+  if (!pt) return `<p class="empty">Part not found. <a href="#/parts">Back to spare parts</a></p>`;
+  const moves = S.part_moves.filter(m => m.part_id === id).sort(byNewest);
+  const kv = (k, v) => `<div><span>${k}</span><b>${v}</b></div>`;
+  return `<p class="small" style="margin-bottom:10px"><a href="#/parts" class="muted" style="text-decoration:none">← Spare parts</a></p>
+  <div class="a-head"><div><h1>${h(pt.name)}</h1><div class="row" style="margin-top:8px">${qtyPill(pt)}<span class="muted small">in stock</span></div></div>
+    <div class="row"><button class="btn primary" data-act="checkout" data-pid="${pt.id}" ${pt.quantity ? '' : 'disabled'}>${ic('parts')} Check out</button>
+      <button class="btn" data-act="restock" data-id="${pt.id}">${ic('plus')} Add stock</button><button class="btn" data-act="part-edit" data-id="${pt.id}">${ic('edit')} Edit</button></div></div>
+  <section class="card"><div class="kv">
+    ${kv('Make', h(pt.make || '—'))}${kv('Supplier code', `<span class="mono">${h(pt.supplier_code || '—')}</span>`)}${kv('Part number', `<span class="mono">${h(pt.part_number || '—')}</span>`)}${kv('Fits', h(pt.fits || '—'))}
+    ${kv('Price each', money(pt.unit_price))}${kv('Stock value', hasH(pt.unit_price) ? money(pt.quantity * pt.unit_price) : '—')}${kv('Condition', h(pt.condition || '—'))}${kv('Location', h(pt.location || '—'))}
+    ${kv('Low-stock alert at', pt.min_qty ? pt.min_qty : 'Off')}
+  </div>${pt.notes ? `<p style="margin-top:14px;white-space:pre-wrap" class="muted">${h(pt.notes)}</p>` : ''}</section>
+  <section class="card"><h2>Stock history (${moves.length})</h2>
+    ${moves.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Date</th><th>What</th><th>Qty</th><th>Person</th><th>Fixture</th><th class="hide-m">Notes</th><th></th></tr></thead><tbody>${moves.map(m => moveRow(m, false)).join('')}</tbody></table></div>` : '<p class="empty">No movements yet.</p>'}
+  </section>
+  ${isAdmin() ? `<button class="btn danger sm" data-act="part-del" data-id="${pt.id}">${ic('trash')} Delete part</button>` : ''}`;
+}
+function partsFittedCard(a) {
+  if (S.partsMissing) return '';
+  const ms = S.part_moves.filter(m => m.asset_id === a.id && m.kind === 'checkout').sort(byNewest);
+  return `<section class="card"><div class="row" style="margin-bottom:10px"><h2 style="margin:0">Parts fitted</h2><span class="spacer"></span><button class="btn sm" data-act="checkout" data-tag="${h(a.tag)}">${ic('plus')} Check out part</button></div>
+    ${ms.length ? `<ul class="list">${ms.map(m => { const pt = partById(m.part_id); return `<li><div style="flex:1;min-width:150px"><a href="#/part/${m.part_id}" style="text-decoration:none">${h(pt?.name || 'Part')}</a> <b>×${-m.change}</b><div class="muted small">${fmtDate(m.created_at)} · ${h(m.person_name || '—')}</div></div></li>`; }).join('')}</ul>` : '<p class="empty">No parts checked out for this item.</p>'}
+  </section>`;
+}
+const peopleList = () => `<datalist id="dl-people">${people().map(n => `<option value="${h(n)}">`).join('')}</datalist>`;
+function checkoutModal(d = {}) {
+  if (S.partsMissing) return toast('Run rigready-parts.sql in Supabase first', 'bad');
+  const pt = d.pid && partById(d.pid);
+  const choices = [...S.parts].sort((a, b) => String(a.make || '').localeCompare(String(b.make || '')) || a.name.localeCompare(b.name));
+  openModal('Check out part', `<form data-form="checkout">${datalists()}${peopleList()}
+    <div class="field"><label>Part</label>${pt ? `<input type="hidden" name="part_id" value="${pt.id}"><div class="note" style="margin:0">${h(pt.name)} <span class="muted">· ${pt.quantity} in stock</span></div>`
+      : `<select name="part_id" required><option value="">Choose a part…</option>${choices.map(x => `<option value="${x.id}" ${x.quantity ? '' : 'disabled'}>${h(x.make ? x.make + ' — ' : '')}${h(x.name)} (${x.quantity} in stock)</option>`).join('')}</select>`}</div>
+    <div class="fgrid">
+      <div class="field"><label>Quantity</label><input name="qty" type="number" min="1" step="1" ${pt ? `max="${pt.quantity}"` : ''} value="1" required inputmode="numeric"></div>
+      <div class="field"><label>Taken by</label><input name="person" list="dl-people" required value="${h(S.profile.name)}" autocomplete="off"></div>
+      <div class="field full"><label>Fixture it's going into (tag, serial or scan code)</label><input name="tag" list="dl-tag" required value="${h(d.tag || '')}" placeholder="e.g. X-Frame 55" autocomplete="off"></div>
+      <div class="field full"><label>Notes (optional)</label><input name="notes" placeholder="e.g. Replacing faulty PSU"></div>
+    </div>
+    <div class="modal-f"><button type="button" class="btn" data-act="modal-close">Cancel</button><button class="btn primary">Check out</button></div></form>`);
+}
+async function submitCheckout(f) {
+  const fd = new FormData(f); const pt = partById(fd.get('part_id'));
+  if (!pt) throw new Error('Choose a part.');
+  const qty = parseInt(fd.get('qty'), 10);
+  if (!(qty > 0)) throw new Error('Quantity must be at least 1.');
+  if (qty > pt.quantity) throw new Error(`Only ${pt.quantity} in stock.`);
+  const a = findAsset(fd.get('tag')); if (!a) throw new Error('No fixture with that tag or serial — check it and try again.');
+  const person = fd.get('person').trim(); if (!person) throw new Error('Who is taking it?');
+  const prof = S.profiles.find(x => norm(x.name) === norm(person));
+  const m = await api.insert('part_moves', { part_id: pt.id, change: -qty, kind: 'checkout', person_name: person, person_id: prof?.id || null, asset_id: a.id, notes: fd.get('notes').trim(), created_by: S.user.id });
+  S.part_moves.unshift(m); pt.quantity -= qty;
+  toast(`${qty} × ${pt.name} checked out to ${person} for ${a.tag}`); closeModal(); render();
+}
+function restockModal(pt) {
+  openModal('Add stock — ' + pt.name, `<form data-form="restock"><input type="hidden" name="part_id" value="${pt.id}">
+    <div class="fgrid"><div class="field"><label>Quantity received</label><input name="qty" type="number" min="1" step="1" value="1" required inputmode="numeric"></div>
+      <div class="field"><label>Price each (optional)</label><input name="price" type="number" min="0" step="0.01" value="${h(pt.unit_price ?? '')}" inputmode="decimal"></div>
+      <div class="field full"><label>Notes (optional)</label><input name="notes" placeholder="e.g. ShowTech order, invoice number"></div></div>
+    <div class="modal-f"><button type="button" class="btn" data-act="modal-close">Cancel</button><button class="btn primary">Add stock</button></div></form>`);
+}
+async function submitRestock(f) {
+  const fd = new FormData(f); const pt = partById(fd.get('part_id')); const qty = parseInt(fd.get('qty'), 10);
+  if (!(qty > 0)) throw new Error('Quantity must be at least 1.');
+  const m = await api.insert('part_moves', { part_id: pt.id, change: qty, kind: 'restock', notes: fd.get('notes').trim(), created_by: S.user.id });
+  S.part_moves.unshift(m); pt.quantity += qty;
+  const price = numOrNull(fd.get('price'));
+  if (price != null && price !== Number(pt.unit_price)) Object.assign(pt, await api.update('parts', pt.id, { unit_price: price, updated_at: new Date().toISOString() }));
+  toast(`Added ${qty}`); closeModal(); render();
+}
+async function returnPart(id) {
+  const m = S.part_moves.find(x => x.id === id); const pt = m && partById(m.part_id); if (!pt) return;
+  if (!confirm(`Return ${-m.change} × ${pt.name} to stock (came back unused)?`)) return;
+  try {
+    const r = await api.insert('part_moves', { part_id: pt.id, change: -m.change, kind: 'return', person_name: m.person_name, asset_id: m.asset_id, notes: 'Return of ' + m.id, created_by: S.user.id });
+    S.part_moves.unshift(r); pt.quantity += -m.change; toast('Returned to stock'); render();
+  } catch (e) { toast(errMsg(e), 'bad'); }
+}
+async function undoMove(id) {
+  const m = S.part_moves.find(x => x.id === id); const pt = m && partById(m.part_id); if (!pt) return;
+  if (!confirm('Undo this entry? Use this only to fix a mistake — stock goes back to what it was before it.')) return;
+  try { await api.remove('part_moves', id); S.part_moves = S.part_moves.filter(x => x.id !== id); pt.quantity -= m.change; toast('Undone'); render(); }
+  catch (e) { toast(errMsg(e), 'bad'); }
+}
+function partModal(pt) {
+  const v = pt || { condition: 'New' };
+  openModal(pt ? 'Edit part' : 'Add part', `<form data-form="part">${datalists()}<input type="hidden" name="id" value="${h(pt?.id || '')}">
+    <div class="fgrid">
+      <div class="field full"><label>Part name</label><input name="name" required value="${h(v.name)}" placeholder="e.g. Sharpy X-Frame tilt lock lever"></div>
+      <div class="field"><label>Make</label><input name="make" list="dl-make" value="${h(v.make)}"></div>
+      <div class="field"><label>Fits (models)</label><input name="fits" list="dl-model" value="${h(v.fits)}" placeholder="e.g. X-Frame"></div>
+      <div class="field"><label>Supplier code (e.g. ShowTech)</label><input name="supplier_code" class="mono" value="${h(v.supplier_code)}"></div>
+      <div class="field"><label>Manufacturer part number</label><input name="part_number" class="mono" value="${h(v.part_number)}"></div>
+      <div class="field"><label>${pt ? 'Quantity on hand (stock count)' : 'Starting quantity'}</label><input name="quantity" type="number" min="0" step="1" required value="${h(v.quantity ?? 0)}" inputmode="numeric"></div>
+      <div class="field"><label>Price each ($)</label><input name="unit_price" type="number" min="0" step="0.01" value="${h(v.unit_price ?? '')}" inputmode="decimal"></div>
+      <div class="field"><label>Condition</label><input name="condition" list="dl-cond" value="${h(v.condition)}"><datalist id="dl-cond"><option value="New"><option value="Used"></datalist></div>
+      <div class="field"><label>Low-stock alert at (0 = off)</label><input name="min_qty" type="number" min="0" step="1" value="${h(v.min_qty ?? 0)}" inputmode="numeric"></div>
+      <div class="field full"><label>Location</label><input name="location" value="${h(v.location)}" placeholder="e.g. Parts shelf B, bin 4"></div>
+      <div class="field full"><label>Notes</label><textarea name="notes">${h(v.notes)}</textarea></div>
+    </div>
+    ${pt ? '<p class="muted small" style="margin-bottom:12px">Changing the quantity here is recorded as a stock-count correction. Use Check out / Add stock for normal movements.</p>' : ''}
+    <div class="modal-f"><button type="button" class="btn" data-act="modal-close">Cancel</button><button class="btn primary">${pt ? 'Save' : 'Add part'}</button></div></form>`);
+}
+async function submitPart(f) {
+  const fd = Object.fromEntries(new FormData(f)); const id = fd.id;
+  const row = { name: fd.name.trim(), make: fd.make.trim(), fits: fd.fits.trim(), supplier_code: fd.supplier_code.trim(), part_number: fd.part_number.trim(),
+    unit_price: numOrNull(fd.unit_price), condition: fd.condition.trim(), min_qty: parseInt(fd.min_qty || '0', 10) || 0, location: fd.location.trim(), notes: fd.notes.trim(), updated_at: new Date().toISOString() };
+  const qty = parseInt(fd.quantity || '0', 10) || 0;
+  let pt;
+  if (id) {
+    pt = partById(id); Object.assign(pt, await api.update('parts', id, row));
+    if (qty !== pt.quantity) { const m = await api.insert('part_moves', { part_id: id, change: qty - pt.quantity, kind: 'adjust', notes: 'Stock count corrected', created_by: S.user.id }); S.part_moves.unshift(m); pt.quantity = qty; }
+  } else {
+    pt = await api.insert('parts', { ...row, quantity: 0 }); S.parts.push(pt);
+    if (qty > 0) { const m = await api.insert('part_moves', { part_id: pt.id, change: qty, kind: 'restock', notes: 'Starting stock', created_by: S.user.id }); S.part_moves.unshift(m); pt.quantity = qty; }
+  }
+  toast(id ? 'Saved' : 'Part added'); closeModal(); location.hash = '#/part/' + pt.id; render();
 }
 
 /* ============================================================
@@ -1059,6 +1271,14 @@ function exportCSV(what, opts = {}) {
   if (what === 'due') downloadText(`service-due-${stamp()}.csv`, toCSV(dueList(), [
     ['Asset tag', d => d.a.tag], ['Model', d => d.a.model], ['Task', d => d.s.task], ['Status', d => d.state], ['Due date', d => d.dueDate ? fmtDate(d.dueDate) : ''],
     ['Days left', d => d.daysLeft ?? ''], ['Hours left', d => d.hoursLeft ?? ''], ['Last done', d => d.last ? fmtDate(d.last.created_at) : 'Never']]));
+  if (what === 'parts') downloadText(`spare-parts-${stamp()}.csv`, toCSV(filteredParts(), [
+    ['Part', p => p.name], ['Make', p => p.make], ['Fits', p => p.fits], ['Supplier code', p => p.supplier_code], ['Part number', p => p.part_number],
+    ['In stock', p => p.quantity], ['Low-stock alert at', p => p.min_qty || ''], ['Price each', p => p.unit_price ?? ''], ['Stock value', p => hasH(p.unit_price) ? (p.quantity * p.unit_price).toFixed(2) : ''],
+    ['Condition', p => p.condition], ['Location', p => p.location], ['Notes', p => p.notes]]));
+  if (what === 'moves') downloadText(`parts-movements-${stamp()}.csv`, toCSV([...S.part_moves].sort(byNewest), [
+    ['Date', m => fmtDT(m.created_at)], ['Part', m => partById(m.part_id)?.name || ''], ['What', m => MOVE[m.kind] || m.kind], ['Qty', m => m.change],
+    ['Person', m => m.person_name || ''], ['Fixture', m => m.asset_id ? tagOf(m.asset_id) : ''], ['Price each', m => partById(m.part_id)?.unit_price ?? ''],
+    ['Notes', m => m.notes?.startsWith('Return of ') ? '' : m.notes], ['Logged by', m => nameOf(m.created_by)]]));
   if (what === 'logs') {
     const from = opts.from ? new Date(opts.from + 'T00:00:00') : new Date(0), to = opts.to ? new Date(opts.to + 'T23:59:59') : new Date();
     const rows = S.logs.filter(l => { const d = new Date(l.created_at); return d >= from && d <= to; }).sort(byNewest);
@@ -1122,6 +1342,13 @@ const ACT = {
   'print-faults': printFaults,
   'export': d => exportCSV(d.what),
   'due-tab': d => { S.dueTab = d.tab; render(); },
+  'part-new': () => partModal(),
+  'part-edit': d => partModal(S.parts.find(x => x.id === d.id)),
+  'part-del': d => del('parts', d.id, 'Delete this part and its stock history?', () => { S.part_moves = S.part_moves.filter(m => m.part_id !== d.id); location.hash = '#/parts'; }),
+  'checkout': d => checkoutModal(d),
+  'restock': d => restockModal(S.parts.find(x => x.id === d.id)),
+  'part-return': d => returnPart(d.id),
+  'move-del': d => undoMove(d.id),
 };
 document.addEventListener('click', e => {
   const t = e.target.closest('[data-act]'); if (!t) return;
@@ -1140,7 +1367,7 @@ const FORMS = {
   },
   async newpw(f) { await api.setPw(new FormData(f).get('password')); S.recovery = false; toast('Password updated'); history.replaceState(null, '', location.pathname + '#/dashboard'); await boot(); },
   async lookup(f) { lookup(new FormData(f).get('code')); f.reset(); },
-  'link-code': linkCode, asset: submitAsset, log: submitLog, sched: submitSched, manual: submitManual,
+  'link-code': linkCode, part: submitPart, checkout: submitCheckout, restock: submitRestock, asset: submitAsset, log: submitLog, sched: submitSched, manual: submitManual,
   async 'export-logs'(f) { const fd = new FormData(f); exportCSV('logs', { from: fd.get('from'), to: fd.get('to') }); },
 };
 document.addEventListener('submit', async e => {
@@ -1154,12 +1381,14 @@ document.addEventListener('submit', async e => {
 });
 document.addEventListener('input', e => {
   const k = e.target.dataset.filter; if (!k) return;
+  if (k === 'partQ') { S.partQ = e.target.value; $('#part-list').innerHTML = partTable(); return; }
   if (k === 'manualQ') { S.manualQ = e.target.value; const keep = e.target.selectionStart; render(); const i = $('[data-filter=manualQ]'); i.focus(); i.setSelectionRange(keep, keep); return; }
   S.filter[k] = e.target.value; $('#asset-list').innerHTML = assetTable();
 });
 document.addEventListener('change', async e => {
   const t = e.target;
   if (t.dataset.photoScan !== undefined) return scanPhoto(t);
+  if (t.dataset.filter === 'partMake') { S.partMake = t.value; $('#part-list').innerHTML = partTable(); return; }
   if (t.dataset.filter && t.tagName === 'SELECT') { S.filter[t.dataset.filter] = t.value; $('#asset-list').innerHTML = assetTable(); return; }
   if (t.dataset.roleFor) {
     try { const p = await api.update('profiles', t.dataset.roleFor, { role: t.value }); Object.assign(S.profiles.find(x => x.id === p.id), p); toast('Access updated'); render(); }
