@@ -62,7 +62,8 @@ create table public.assets (
   location      text,
   status        text not null default 'OK' check (status in ('OK','Faulty','In repair','Out of service','Retired')),
   faulty_since  timestamptz,                   -- drives the "faulty over 2 months" alert
-  hours         numeric,
+  lamp_hours    numeric,
+  fixture_hours numeric,
   notes         text,
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now(),
@@ -101,6 +102,7 @@ create table public.schedules (
   task            text not null,
   interval_days   int check (interval_days > 0),
   interval_hours  numeric check (interval_hours > 0),
+  hours_basis     text not null default 'lamp' check (hours_basis in ('lamp','fixture')),
   created_at      timestamptz not null default now(),
   check (interval_days is not null or interval_hours is not null),
   check (asset_id is not null or (make is not null and model is not null))
@@ -114,7 +116,8 @@ create table public.logs (
   title         text not null,
   details       text,
   parts         text,
-  hours_at      numeric,
+  lamp_hours    numeric,
+  fixture_hours numeric,
   status_after  text,
   schedule_id   uuid references public.schedules(id) on delete set null,
   photos        text[] not null default '{}',

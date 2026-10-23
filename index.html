@@ -246,6 +246,9 @@ const isAdmin = () => S.profile?.role === 'admin';
 const assetById = id => S.assets.find(a => a.id === id);
 const nameOf = id => S.profiles.find(p => p.id === id)?.name || 'Unknown';
 const whoOf = l => l.tech_name || nameOf(l.created_by);
+const hasH = v => v != null && v !== '';
+const fmtH = v => hasH(v) ? Number(v).toLocaleString() + ' h' : '—';
+const numOrNull = v => (v == null || String(v).trim() === '') ? null : Number(v);
 const byNewest = (a, b) => new Date(b.created_at) - new Date(a.created_at);
 
 const P = {
@@ -371,7 +374,7 @@ function demoApi() {
 function demoSeed() {
   const ago = d => new Date(Date.now() - d * DAY).toISOString();
   const A = (tag, serial, category, make, model, location, status, hours, created, faulty) =>
-    ({ id: uid(), tag, serial, category, make, model, location, status, hours, notes: '', created_at: ago(created), updated_at: ago(1), faulty_since: faulty != null ? ago(faulty) : null });
+    ({ id: uid(), tag, serial, category, make, model, location, status, lamp_hours: hours, fixture_hours: hours != null ? hours + 850 : null, notes: '', created_at: ago(created), updated_at: ago(1), faulty_since: faulty != null ? ago(faulty) : null });
   const a = [
     A('LX-0101','MP-04411','Fixture','Robe','MegaPointe','Rack 3','OK',1320,400),
     A('LX-0102','MP-04412','Fixture','Robe','MegaPointe','Rack 3','Faulty',1610,400,74),
@@ -392,15 +395,15 @@ function demoSeed() {
     { id: uid(), make:'MA Lighting', model:'grandMA3 light', task:'Software update & show file backup', interval_days:90, created_at: ago(450) },
     { id: uid(), asset_id: T('CON-002'), task:'Clean faders & encoders', interval_days:365, created_at: ago(450) },
   ];
-  const L = (tag, kind, title, details, daysAgo, extra={}) => ({ id: uid(), asset_id: T(tag), kind, title, details, parts:'', hours_at:null, status_after:null, schedule_id:null, photos:[], created_by:'demo-tech', created_at: ago(daysAgo), ...extra });
+  const L = (tag, kind, title, details, daysAgo, extra={}) => ({ id: uid(), asset_id: T(tag), kind, title, details, parts:'', lamp_hours:null, fixture_hours:null, status_after:null, schedule_id:null, photos:[], created_by:'demo-tech', created_at: ago(daysAgo), ...extra });
   const logs = [
     L('LX-0102','Fault','Pan stalls around 270°','Fixture throws a pan error on homing after a load-out. Reproducible on the bench.',74,{status_after:'Faulty'}),
     L('LX-0102','Inspection','Pan motor driver suspected','Swapped data cable and PSU — no change. Driver board ordered, waiting on supplier.',60,{created_by:'demo-admin'}),
-    L('LX-0103','Fault','Lamp won\'t strike','Came back from site with lamp not striking. Hours at 980.',12,{status_after:'In repair',hours_at:980}),
+    L('LX-0103','Fault','Lamp won\'t strike','Came back from site with lamp not striking. Hours at 980.',12,{status_after:'In repair',lamp_hours:980,fixture_hours:1830}),
     L('LX-0211','Fault','Zoom drifting','Zoom drifts after warm-up and errors on reset.',95,{status_after:'Faulty'}),
     L('LX-0211','Repair','Replaced zoom belt — still faulty','Belt replaced, fault persists. Likely main board. Pulled from hire stock.',80,{status_after:'Out of service',parts:'Zoom belt x1'}),
     L('CON-002','Fault','Encoder 3 skipping values','Reported by operator after last show. Intermittent.',20,{status_after:'Faulty',created_by:'demo-admin'}),
-    L('LX-0101','Service','Clean optics, fans & filters','Full clean, fans checked, filters replaced.',150,{schedule_id:s[0].id,hours_at:1100}),
+    L('LX-0101','Service','Clean optics, fans & filters','Full clean, fans checked, filters replaced.',150,{schedule_id:s[0].id,lamp_hours:1100,fixture_hours:1950}),
     L('CON-001','Service','Software update & show file backup','Updated to latest release, show files backed up to USB and drive.',70,{schedule_id:s[4].id}),
     L('LX-0410','Inspection','Pre-hire check','Passed. Lens clean, clamp and safety OK.',9),
   ];
@@ -465,9 +468,10 @@ function dueFor(s, a) {
     daysLeft = Math.ceil((dueDate - Date.now()) / DAY);
     state = daysLeft < 0 ? 'overdue' : daysLeft <= CFG.DUE_SOON_DAYS ? 'soon' : 'ok';
   }
-  if (s.interval_hours && a.hours != null && a.hours !== '') {
-    const lastH = last && last.hours_at != null ? Number(last.hours_at) : 0;
-    hoursLeft = Math.round(lastH + Number(s.interval_hours) - Number(a.hours));
+  const basis = s.hours_basis === 'fixture' ? 'fixture_hours' : 'lamp_hours';
+  if (s.interval_hours && hasH(a[basis])) {
+    const lastH = last && hasH(last[basis]) ? Number(last[basis]) : 0;
+    hoursLeft = Math.round(lastH + Number(s.interval_hours) - Number(a[basis]));
     if (hoursLeft <= 0) state = 'overdue';
     else if (hoursLeft <= s.interval_hours * 0.1 && state === 'ok') state = 'soon';
   }
@@ -482,7 +486,8 @@ function dueList() {
 function dueText(d) {
   const p = [];
   if (d.daysLeft != null) p.push(d.daysLeft < 0 ? `${-d.daysLeft} days overdue` : d.daysLeft === 0 ? 'due today' : `due in ${d.daysLeft} days`);
-  if (d.hoursLeft != null) p.push(d.hoursLeft <= 0 ? `${-d.hoursLeft} h over` : `${d.hoursLeft} h left`);
+  const hl = d.s.hours_basis === 'fixture' ? 'fixture' : 'lamp';
+  if (d.hoursLeft != null) p.push(d.hoursLeft <= 0 ? `${-d.hoursLeft} ${hl} h over` : `${d.hoursLeft} ${hl} h left`);
   return p.join(' · ') || '—';
 }
 const duePill = d => `<span class="pill d-${d.state}">${d.state === 'overdue' ? 'Overdue' : d.state === 'soon' ? 'Due soon' : 'OK'}</span>`;
@@ -734,11 +739,11 @@ function filteredAssets() {
 function assetTable() {
   const rows = filteredAssets();
   if (!rows.length) return '<p class="empty">No items match.</p>';
-  return `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Tag</th><th>Item</th><th class="hide-m">Type</th><th class="hide-m">Location</th><th>Status</th><th class="hide-m">Hours</th><th class="hide-m">Last activity</th></tr></thead><tbody>
+  return `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Tag</th><th>Item</th><th class="hide-m">Type</th><th class="hide-m">Location</th><th>Status</th><th class="hide-m">Lamp h</th><th class="hide-m">Fixture h</th><th class="hide-m">Last activity</th></tr></thead><tbody>
   ${rows.map(a => { const l = lastActivity(a); return `<tr class="click" data-act="go" data-href="#/asset/${a.id}">
     <td><span class="tag">${h(a.tag)}</span></td><td><div>${h(a.make)} ${h(a.model)}</div>${a.serial ? `<div class="muted small mono">${h(a.serial)}</div>` : ''}</td>
     <td class="hide-m">${h(a.category)}</td><td class="hide-m">${h(a.location || '—')}</td><td>${pill(a.status)}</td>
-    <td class="hide-m">${a.hours != null && a.hours !== '' ? h(a.hours) : '—'}</td><td class="hide-m muted small">${l ? h(l.kind) + ' · ' + fmtDate(l.created_at) : '—'}</td></tr>`; }).join('')}
+    <td class="hide-m">${fmtH(a.lamp_hours)}</td><td class="hide-m">${fmtH(a.fixture_hours)}</td><td class="hide-m muted small">${l ? h(l.kind) + ' · ' + fmtDate(l.created_at) : '—'}</td></tr>`; }).join('')}
   </tbody></table></div>`;
 }
 
@@ -766,7 +771,8 @@ function vAsset(id) {
   ${long ? `<div class="alert bad"><div class="alert-h">${ic('alert')} Faulty for ${daysSince(a.faulty_since)} days — over the ${CFG.FAULT_ALERT_DAYS}-day limit</div><p class="small">Chase the repair, send it away, or mark it out of service.</p></div>` : ''}
   <section class="card"><div class="kv">
     ${kv('Asset tag', `<span class="mono">${h(a.tag)}</span>`)}${kv('Serial', `<span class="mono">${h(a.serial || '—')}</span>`)}${kv('Type', h(a.category))}${kv('Location', h(a.location || '—'))}
-    ${kv('Make', h(a.make || '—'))}${kv('Model', h(a.model || '—'))}${kv('Hours', a.hours != null && a.hours !== '' ? h(a.hours) : '—')}${kv('Added', fmtDate(a.created_at))}
+    ${kv('Make', h(a.make || '—'))}${kv('Model', h(a.model || '—'))}${kv('Added', fmtDate(a.created_at))}
+    ${a.category !== 'Console' || hasH(a.lamp_hours) || hasH(a.fixture_hours) ? kv('Lamp hours', fmtH(a.lamp_hours)) + kv('Fixture hours', fmtH(a.fixture_hours)) : ''}
   </div>${a.notes ? `<p style="margin-top:14px;white-space:pre-wrap" class="muted">${h(a.notes)}</p>` : ''}</section>
   <div class="cols">
     <section class="card"><h2>History (${logs.length})</h2>
@@ -789,7 +795,7 @@ function logItem(l, showAsset) {
   return `<li class="log k-${slug(l.kind)}"><div class="log-dot"></div><div>
     <div class="log-top"><span class="kind">${h(l.kind)}</span><strong>${h(l.title)}</strong>${a ? `<a href="#/asset/${a.id}" class="tag">${h(a.tag)}</a><span class="muted small">${h(a.model)}</span>` : ''}</div>
     ${l.details ? `<p>${h(l.details)}</p>` : ''}
-    <div class="meta"><span>${fmtDT(l.created_at)}</span><span>· ${h(whoOf(l))}</span>${l.parts ? `<span>· Parts: ${h(l.parts)}</span>` : ''}${l.hours_at != null && l.hours_at !== '' ? `<span>· ${h(l.hours_at)} h</span>` : ''}${l.status_after ? `<span>·</span>${pill(l.status_after)}` : ''}</div>
+    <div class="meta"><span>${fmtDT(l.created_at)}</span><span>· ${h(whoOf(l))}</span>${l.parts ? `<span>· Parts: ${h(l.parts)}</span>` : ''}${hasH(l.lamp_hours) ? `<span>· Lamp ${fmtH(l.lamp_hours)}</span>` : ''}${hasH(l.fixture_hours) ? `<span>· Fixture ${fmtH(l.fixture_hours)}</span>` : ''}${l.status_after ? `<span>·</span>${pill(l.status_after)}` : ''}</div>
     ${l.photos?.length ? `<div class="thumbs">${l.photos.map(p => `<img class="thumb" alt="Photo" data-bucket="photos" data-path="${h(p)}" data-act="photo-open" data-p="${h(p)}">`).join('')}</div>` : ''}
   </div>${canDel && !showAsset ? `<button class="icon-btn" title="Delete entry" data-act="log-del" data-id="${l.id}">${ic('trash')}</button>` : '<span></span>'}</li>`;
 }
@@ -821,7 +827,7 @@ function vSchedules() {
   <section class="card"><h2>Schedules (${S.schedules.length})</h2>
     ${S.schedules.length ? `<ul class="list">${S.schedules.map(s => { const n = scheduleTargets(s).length; const a = s.asset_id && assetById(s.asset_id);
       return `<li><div style="flex:1;min-width:180px"><strong>${h(s.task)}</strong><div class="muted small">${a ? 'Item ' + h(a.tag) : h(s.make) + ' ' + h(s.model) + ` · ${n} item${n === 1 ? '' : 's'}`}</div></div>
-      <span class="muted small">Every ${[s.interval_days ? s.interval_days + ' days' : '', s.interval_hours ? s.interval_hours + ' h' : ''].filter(Boolean).join(' or ')}</span>
+      <span class="muted small">Every ${[s.interval_days ? s.interval_days + ' days' : '', s.interval_hours ? s.interval_hours + (s.hours_basis === 'fixture' ? ' fixture h' : ' lamp h') : ''].filter(Boolean).join(' or ')}</span>
       ${isAdmin() ? `<button class="icon-btn" title="Delete schedule" data-act="sched-del" data-id="${s.id}">${ic('trash')}</button>` : ''}</li>`; }).join('')}</ul>` : '<p class="empty">Add a schedule like "Clean fans every 180 days" or "Lamp change every 1500 h".</p>'}
   </section>`;
 }
@@ -901,7 +907,8 @@ function assetModal(a, opts = {}) {
       <div class="field"><label>Make</label><input name="make" list="dl-make" value="${h(v.make)}" placeholder="e.g. Robe"></div>
       <div class="field"><label>Model</label><input name="model" list="dl-model" value="${h(v.model)}" placeholder="e.g. MegaPointe"></div>
       <div class="field"><label>Location</label><input name="location" list="dl-loc" value="${h(v.location)}" placeholder="e.g. Rack 3"></div>
-      <div class="field"><label>Hours (lamp / run)</label><input name="hours" type="number" step="any" min="0" value="${h(v.hours)}"></div>
+      <div class="field"><label>Lamp hours</label><input name="lamp_hours" type="number" step="any" min="0" inputmode="decimal" value="${h(v.lamp_hours)}"></div>
+      <div class="field"><label>Fixture hours</label><input name="fixture_hours" type="number" step="any" min="0" inputmode="decimal" value="${h(v.fixture_hours)}"></div>
       <div class="field full"><label>Notes</label><textarea name="notes" placeholder="Firmware, mods, anything worth knowing">${h(v.notes)}</textarea></div>
     </div>
     <div class="modal-f"><button type="button" class="btn" data-act="modal-close">Cancel</button><button class="btn primary">${a ? 'Save' : 'Add item'}</button></div>
@@ -910,7 +917,7 @@ function assetModal(a, opts = {}) {
 async function submitAsset(f) {
   const fd = Object.fromEntries(new FormData(f)); const id = fd.id; delete fd.id;
   for (const k of ['tag','serial','make','model','location','notes']) fd[k] = (fd[k] || '').trim();
-  fd.hours = fd.hours === '' ? null : Number(fd.hours);
+  fd.lamp_hours = numOrNull(fd.lamp_hours); fd.fixture_hours = numOrNull(fd.fixture_hours);
   const old = id ? assetById(id) : null;
   if (old) {
     const changed = fd.status !== old.status;
@@ -941,8 +948,9 @@ function logModal(assetId, pre = {}) {
       <div class="field full" id="sched-field" ${kind === 'Service' && scheds.length ? '' : 'hidden'}><label>Scheduled task completed</label><select name="schedule_id"><option value="">— Not a scheduled task —</option>${scheds.map(s => `<option value="${s.id}" ${pre.schedule_id === s.id ? 'selected' : ''}>${h(s.task)}</option>`).join('')}</select></div>
       <div class="field full"><label>Summary</label><input name="title" required value="${h(pre.title || '')}" placeholder="${kind === 'Fault' ? 'e.g. Tilt stalls, colour wheel stuck' : 'What was done'}"></div>
       <div class="field full"><label>Details</label><textarea name="details" placeholder="Symptoms, tests, findings, what fixed it"></textarea></div>
-      <div class="field"><label>Parts used</label><input name="parts" placeholder="e.g. Lamp x1, fan x2"></div>
-      <div class="field"><label>Hours reading</label><input name="hours_at" type="number" step="any" min="0" value="${h(a.hours ?? '')}"></div>
+      <div class="field full"><label>Parts used</label><input name="parts" placeholder="e.g. Lamp x1, fan x2"></div>
+      ${a.category === 'Console' ? '' : `<div class="field"><label>Lamp hours${hasH(a.lamp_hours) ? ` <span class="muted">(last ${fmtH(a.lamp_hours)})</span>` : ''}</label><input name="lamp_hours" type="number" step="any" min="0" inputmode="decimal" placeholder="Reading from the fixture"></div>
+      <div class="field"><label>Fixture hours${hasH(a.fixture_hours) ? ` <span class="muted">(last ${fmtH(a.fixture_hours)})</span>` : ''}</label><input name="fixture_hours" type="number" step="any" min="0" inputmode="decimal" placeholder="Reading from the fixture"></div>`}
       <div class="field full"><label>Photos</label><input name="photos" type="file" accept="image/*" multiple></div>
     </div>
     <div class="modal-f"><button type="button" class="btn" data-act="modal-close">Cancel</button><button class="btn primary">Save entry</button></div></form>`);
@@ -953,15 +961,16 @@ async function submitLog(f) {
   const files = [...f.querySelector('[name=photos]').files];
   const photos = [];
   for (const file of files) { const blob = await compressImage(file); photos.push(await api.upload('photos', blob, (file.name || 'photo').replace(/\.\w+$/, '') + '.jpg')); }
-  const hoursRaw = fd.get('hours_at'); const hours = hoursRaw === '' ? null : Number(hoursRaw);
+  const lampH = numOrNull(fd.get('lamp_hours')), fixH = numOrNull(fd.get('fixture_hours'));
   const kind = fd.get('kind'), status_after = fd.get('status_after');
   const row = { asset_id: a.id, kind, title: fd.get('title').trim(), details: fd.get('details').trim(), parts: fd.get('parts').trim(),
-    hours_at: hours, status_after: status_after !== a.status || kind === 'Fault' || kind === 'Repair' ? status_after : null,
+    lamp_hours: lampH, fixture_hours: fixH, status_after: status_after !== a.status || kind === 'Fault' || kind === 'Repair' ? status_after : null,
     schedule_id: kind === 'Service' ? (fd.get('schedule_id') || null) : null, photos, created_by: S.user.id };
   const log = await api.insert('logs', row); S.logs.unshift(log);
   const patch = {};
   if (status_after !== a.status) Object.assign(patch, statusPatch(a, status_after));
-  if (hours != null && (a.hours == null || a.hours === '' || hours !== Number(a.hours))) patch.hours = hours;
+  if (lampH != null && lampH !== Number(a.lamp_hours)) patch.lamp_hours = lampH;
+  if (fixH != null && fixH !== Number(a.fixture_hours)) patch.fixture_hours = fixH;
   if (Object.keys(patch).length) { patch.updated_at = new Date().toISOString(); patch.updated_by = S.user.id; Object.assign(a, await api.update('assets', a.id, patch)); }
   toast('Entry saved'); closeModal(); render();
 }
@@ -974,12 +983,13 @@ function schedModal(d = {}) {
     <div class="field" id="scope-asset" ${a ? '' : 'hidden'}><label>Asset tag</label><input name="tag" list="dl-tag" value="${h(a?.tag || '')}" class="mono"></div>
     <div class="field"><label>Task</label><input name="task" required placeholder="e.g. Clean optics & fans, Lamp change, Software update"></div>
     <div class="fgrid"><div class="field"><label>Every … days</label><input name="interval_days" type="number" min="1" step="1" placeholder="e.g. 180"></div><div class="field"><label>and/or every … hours</label><input name="interval_hours" type="number" min="1" step="any" placeholder="e.g. 1500"></div></div>
-    <p class="muted small" style="margin-bottom:12px">If you set both, it's due at whichever comes first. Hours use each item's hours reading.</p>
+    <div class="field"><label>Hours count from</label><select name="hours_basis"><option value="lamp">Lamp hours (lamp changes)</option><option value="fixture">Fixture hours (cleans, services)</option></select></div>
+    <p class="muted small" style="margin-bottom:12px">If you set both, it's due at whichever comes first.</p>
     <div class="modal-f"><button type="button" class="btn" data-act="modal-close">Cancel</button><button class="btn primary">Add schedule</button></div></form>`);
 }
 async function submitSched(f) {
   const fd = Object.fromEntries(new FormData(f));
-  const row = { task: fd.task.trim(), interval_days: fd.interval_days ? parseInt(fd.interval_days) : null, interval_hours: fd.interval_hours ? Number(fd.interval_hours) : null };
+  const row = { task: fd.task.trim(), interval_days: fd.interval_days ? parseInt(fd.interval_days) : null, interval_hours: fd.interval_hours ? Number(fd.interval_hours) : null, hours_basis: fd.hours_basis || 'lamp' };
   if (!row.interval_days && !row.interval_hours) throw new Error('Set an interval in days, hours, or both.');
   if (fd.scope === 'asset') {
     const a = S.assets.find(x => norm(x.tag) === norm(fd.tag)); if (!a) throw new Error('No item with that asset tag.');
@@ -1041,7 +1051,7 @@ const tagOf = id => assetById(id)?.tag || '';
 function exportCSV(what, opts = {}) {
   if (what === 'inventory') downloadText(`inventory-${stamp()}.csv`, toCSV(filteredAssetsAll(), [
     ['Asset tag', a => a.tag], ['Serial', a => a.serial], ['Type', a => a.category], ['Make', a => a.make], ['Model', a => a.model], ['Location', a => a.location],
-    ['Status', a => a.status], ['Faulty since', a => a.faulty_since ? fmtDate(a.faulty_since) : ''], ['Days faulty', a => a.faulty_since ? daysSince(a.faulty_since) : ''], ['Hours', a => a.hours], ['Notes', a => a.notes]]));
+    ['Status', a => a.status], ['Faulty since', a => a.faulty_since ? fmtDate(a.faulty_since) : ''], ['Days faulty', a => a.faulty_since ? daysSince(a.faulty_since) : ''], ['Lamp hours', a => a.lamp_hours], ['Fixture hours', a => a.fixture_hours], ['Notes', a => a.notes]]));
   if (what === 'faults') downloadText(`faults-${stamp()}.csv`, toCSV(faultRows(), [
     ['Asset tag', a => a.tag], ['Make', a => a.make], ['Model', a => a.model], ['Status', a => a.status], ['Faulty since', a => fmtDate(a.faulty_since)], ['Days', a => a.faulty_since ? daysSince(a.faulty_since) : ''],
     ['Over limit', a => a.faulty_since && daysSince(a.faulty_since) >= CFG.FAULT_ALERT_DAYS ? 'YES' : ''], ['Latest note', a => lastActivity(a)?.title || ''], ['Location', a => a.location]]));
@@ -1053,7 +1063,7 @@ function exportCSV(what, opts = {}) {
     const rows = S.logs.filter(l => { const d = new Date(l.created_at); return d >= from && d <= to; }).sort(byNewest);
     downloadText(`maintenance-log-${stamp()}.csv`, toCSV(rows, [
       ['Date', l => fmtDT(l.created_at)], ['Asset tag', l => tagOf(l.asset_id)], ['Model', l => assetById(l.asset_id)?.model || ''], ['Type', l => l.kind], ['Summary', l => l.title],
-      ['Details', l => l.details], ['Parts', l => l.parts], ['Hours', l => l.hours_at], ['Status after', l => l.status_after], ['By', l => whoOf(l)], ['Photos', l => l.photos?.length || 0]]));
+      ['Details', l => l.details], ['Parts', l => l.parts], ['Lamp hours', l => l.lamp_hours], ['Fixture hours', l => l.fixture_hours], ['Status after', l => l.status_after], ['By', l => whoOf(l)], ['Photos', l => l.photos?.length || 0]]));
     toast(`${rows.length} entries exported`);
   }
 }
@@ -1063,10 +1073,10 @@ function printDoc(html) { $('#print').innerHTML = html; setTimeout(() => window.
 function printAsset(a) {
   const logs = S.logs.filter(l => l.asset_id === a.id).sort(byNewest);
   printDoc(`<h1>${h(a.tag)} — ${h(a.make)} ${h(a.model)}</h1>
-  <div class="sub">Serial ${h(a.serial || '—')} · ${h(a.category)} · ${h(a.location || '—')} · Status: ${h(a.status)}${a.hours != null && a.hours !== '' ? ' · ' + h(a.hours) + ' h' : ''}<br>Printed ${fmtDT(new Date())} by ${h(S.profile.name)}</div>
+  <div class="sub">Serial ${h(a.serial || '—')} · ${h(a.category)} · ${h(a.location || '—')} · Status: ${h(a.status)}${hasH(a.lamp_hours) ? ' · Lamp ' + fmtH(a.lamp_hours) : ''}${hasH(a.fixture_hours) ? ' · Fixture ' + fmtH(a.fixture_hours) : ''}<br>Printed ${fmtDT(new Date())} by ${h(S.profile.name)}</div>
   <h2>Maintenance history (${logs.length})</h2>
-  <table><thead><tr><th>Date</th><th>Type</th><th>Summary & details</th><th>Parts</th><th>Hours</th><th>Status</th><th>By</th></tr></thead><tbody>
-  ${logs.map(l => `<tr><td>${fmtDT(l.created_at)}</td><td>${h(l.kind)}</td><td><b>${h(l.title)}</b>${l.details ? '<br>' + h(l.details).replace(/\n/g, '<br>') : ''}</td><td>${h(l.parts)}</td><td>${h(l.hours_at ?? '')}</td><td>${h(l.status_after || '')}</td><td>${h(whoOf(l))}</td></tr>`).join('') || '<tr><td colspan="7">No entries</td></tr>'}
+  <table><thead><tr><th>Date</th><th>Type</th><th>Summary & details</th><th>Parts</th><th>Lamp h</th><th>Fixture h</th><th>Status</th><th>By</th></tr></thead><tbody>
+  ${logs.map(l => `<tr><td>${fmtDT(l.created_at)}</td><td>${h(l.kind)}</td><td><b>${h(l.title)}</b>${l.details ? '<br>' + h(l.details).replace(/\n/g, '<br>') : ''}</td><td>${h(l.parts)}</td><td>${h(l.lamp_hours ?? '')}</td><td>${h(l.fixture_hours ?? '')}</td><td>${h(l.status_after || '')}</td><td>${h(whoOf(l))}</td></tr>`).join('') || '<tr><td colspan="8">No entries</td></tr>'}
   </tbody></table>`);
 }
 function printFaults() {
