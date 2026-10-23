@@ -1,5 +1,5 @@
 -- =====================================================================
--- BenchLog database setup
+-- RigReady database setup
 -- Run this ONCE in a new Supabase project: SQL Editor → New query → paste → Run
 -- =====================================================================
 

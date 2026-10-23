@@ -1,6 +1,6 @@
 {
-  "name": "BenchLog",
-  "short_name": "BenchLog",
+  "name": "RigReady",
+  "short_name": "RigReady",
   "description": "Lighting fixture and console maintenance log",
   "start_url": "./#/dashboard",
   "display": "standalone",

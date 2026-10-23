@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>BenchLog</title>
+<title>RigReady</title>
 <meta name="theme-color" content="#0e1014">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
@@ -220,9 +220,9 @@ label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px;font-wei
 
 <script>
 /* ============================================================
-   BenchLog — lighting fixture & console maintenance log
+   RigReady — lighting fixture & console maintenance log
    ============================================================ */
-const CFG = Object.assign({ SUPABASE_URL:'', SUPABASE_ANON_KEY:'', APP_NAME:'BenchLog', FAULT_ALERT_DAYS:60, DUE_SOON_DAYS:14 }, window.BENCHLOG_CONFIG || {});
+const CFG = Object.assign({ SUPABASE_URL:'', SUPABASE_ANON_KEY:'', APP_NAME:'RigReady', FAULT_ALERT_DAYS:60, DUE_SOON_DAYS:14 }, window.RIGREADY_CONFIG || {});
 const DEMO = !CFG.SUPABASE_URL || !CFG.SUPABASE_ANON_KEY;
 const sb = (!DEMO && window.supabase) ? window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY) : null;
 
@@ -329,7 +329,7 @@ function supabaseApi() {
 }
 
 function demoApi() {
-  const KEY = 'benchlog-demo-v1'; let mem = null;
+  const KEY = 'rigready-demo-v1'; let mem = null;
   const read = () => {
     if (mem) return mem;
     try { const r = localStorage.getItem(KEY); if (r) mem = JSON.parse(r); } catch {}

@@ -1,4 +1,4 @@
-# BenchLog — fixture & console maintenance log
+# RigReady — fixture & console maintenance log
 
 Scan a QR code → see the item's full history → log a fault, repair or service with photos.
 Built for lighting fixtures and consoles, works on phone and laptop, with team log-ins.
