@@ -19,6 +19,7 @@
   font-family:Inter,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;color-scheme:dark;
 }
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 html,body{margin:0;background:var(--bg);color:var(--text);font-size:14px;line-height:1.45;-webkit-text-size-adjust:100%}
 a{color:inherit}
 h1{font-size:22px;margin:0;font-weight:700;letter-spacing:-.01em}
@@ -210,7 +211,7 @@ label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px;font-wei
 </style>
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="qr.min.js"></script><!-- html5-qrcode v2.3.8, Apache-2.0, github.com/mebjas/html5-qrcode -->
 </head>
 <body>
 <div id="app"><div class="center muted">Loading…</div></div>
@@ -626,26 +627,49 @@ function vScan() {
     <div id="reader" class="reader"></div>
     <div class="scan-big" id="scan-idle">
       <div class="scan-ring">${ic('scan')}</div>
-      <button class="btn primary" data-act="cam-start">${ic('camera')} Start camera</button>
+      <div class="row" style="justify-content:center"><button class="btn primary" data-act="cam-start">${ic('camera')} Start camera</button>
+      <label class="btn" style="margin:0">${ic('camera')} Take a photo<input type="file" accept="image/*" capture="environment" data-photo-scan hidden></label></div>
     </div>
+    <div id="reader-file" hidden></div>
+    <div class="note" id="cam-msg" hidden style="max-width:520px;margin:0 auto 14px;color:#f7cf86"></div>
     <div class="row" style="justify-content:center;margin-bottom:16px"><button class="btn" id="cam-stop" data-act="cam-stop" hidden>Stop camera</button></div>
     <form data-form="lookup" class="lookup"><input id="code-input" name="code" placeholder="Type an asset number or use a scanner gun" autocomplete="off" autocapitalize="characters" required><button class="btn">Find</button></form>
-    <p class="muted small" style="text-align:center;margin-top:12px">Codes are matched to each item's asset tag, then its serial number. Unknown codes let you add the item on the spot.</p>
+    <p class="muted small" style="text-align:center;margin-top:12px">Codes match an item's tag or serial — dashes, spaces and leading zeros don't matter (XFRAME-055 finds X-Frame 55). Unknown codes can be linked to an existing item or added new.</p>
   </section>`;
 }
 let qr = null;
+function camProblem(e) {
+  const s = (e?.name || '') + ' ' + errMsg(e);
+  if (/NotAllowed|Permission|denied/i.test(s)) return 'Camera access is blocked for this site. Allow the camera in your browser settings (iPhone: Settings → Safari → Camera → Allow), then try again — or use "Take a photo".';
+  if (/NotFound|no camera|Requested device not found/i.test(s)) return 'No camera found on this device. Use "Take a photo" or type the code.';
+  if (/NotReadable|in use|Could not start/i.test(s)) return 'The camera is busy in another app. Close it and try again, or use "Take a photo".';
+  return 'The live camera couldn\'t start (' + s.trim() + '). Use "Take a photo" instead.';
+}
+function showCamMsg(msg) { const el = $('#cam-msg'); if (el) { el.textContent = msg; el.hidden = !msg; } }
 async function camStart() {
-  if (!window.Html5Qrcode) return toast('Scanner failed to load — check your connection', 'bad');
-  if (!isSecureContext) return toast('Camera needs the app to be opened over https', 'bad');
+  showCamMsg('');
+  if (!window.Html5Qrcode) return showCamMsg('The scanner didn\'t load. Reload the page and try again.');
+  if (!isSecureContext) return showCamMsg('The camera only works when the app is opened from its https:// web address.');
+  if (!navigator.mediaDevices?.getUserMedia) return showCamMsg('This browser can\'t use the live camera (some in-app browsers block it). Open the link in Safari or Chrome, or use "Take a photo".');
   $('#scan-idle').hidden = true; $('#cam-stop').hidden = false;
   try {
     qr = new Html5Qrcode('reader', { verbose: false });
     await qr.start({ facingMode: 'environment' }, { fps: 10, qrbox: (w, hh) => { const s = Math.floor(Math.min(w, hh) * .7); return { width: s, height: s }; } },
       txt => { camStop(); if (navigator.vibrate) navigator.vibrate(60); lookup(txt); });
   } catch (e) {
+    try { qr?.clear(); } catch {}
     qr = null; $('#scan-idle').hidden = false; $('#cam-stop').hidden = true;
-    toast('Camera unavailable: ' + errMsg(e), 'bad');
+    showCamMsg(camProblem(e));
   }
+}
+async function scanPhoto(input) {
+  const file = input.files?.[0]; input.value = ''; if (!file) return;
+  if (!window.Html5Qrcode) return showCamMsg('The scanner didn\'t load. Reload the page and try again.');
+  showCamMsg('Reading code…');
+  const r = new Html5Qrcode('reader-file', { verbose: false });
+  try { const txt = await r.scanFile(file, false); showCamMsg(''); lookup(txt); }
+  catch { showCamMsg('Couldn\'t find a QR code in that photo. Get closer so the code fills most of the picture, keep it in focus, and try again.'); }
+  finally { try { r.clear(); } catch {} }
 }
 async function camStop() {
   if (!qr) return; const q = qr; qr = null;
@@ -656,10 +680,35 @@ function lookup(raw, fromRoute) {
   let code = String(raw || '').trim();
   const m = code.match(/#\/tag\/(.+)$/); if (m) code = decodeURIComponent(m[1]);
   if (!code) return;
-  const a = S.assets.find(x => norm(x.tag) === norm(code)) || S.assets.find(x => x.serial && norm(x.serial) === norm(code));
+  const k = codeKey(code);
+  const a = S.assets.find(x => norm(x.tag) === norm(code)) || S.assets.find(x => x.serial && norm(x.serial) === norm(code))
+    || S.assets.find(x => codeKey(x.tag) === k) || S.assets.find(x => x.serial && codeKey(x.serial) === k);
   if (a) { const to = '#/asset/' + a.id; fromRoute ? location.replace(to) : (location.hash = to); return; }
   if (fromRoute) location.replace('#/scan');
-  assetModal(null, { tag: code, notice: `No item with tag <span class="tag">${h(code)}</span> yet. Add it now?` });
+  unknownModal(code);
+}
+/* Codes match ignoring case, spaces, dashes and leading zeros: "XFRAME-055" = "X-Frame 55" */
+function codeKey(s) {
+  return String(s || '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim().split(' ')
+    .map(t => /^\d+$/.test(t) ? t.replace(/^0+(?=\d)/, '') : t).join('');
+}
+function unknownModal(code) {
+  openModal('Code not found', `<div class="note">Scanned <span class="tag">${h(code)}</span> — no item matches it yet.</div>
+    <form data-form="link-code">${datalists()}<input type="hidden" name="code" value="${h(code)}">
+      <div class="field"><label>It's this existing item (search by tag or serial)</label><input name="tag" list="dl-tag" placeholder="e.g. X-Frame 55" autocomplete="off" required></div>
+      <p class="muted small" style="margin:-6px 0 14px">The item's tag becomes <span class="mono">${h(code)}</span>, so this sticker opens it from now on.</p>
+      <div class="modal-f" style="justify-content:space-between"><button type="button" class="btn" data-act="add-from-code" data-code="${h(code)}">${ic('plus')} Add as new item</button><button class="btn primary">Link to item</button></div>
+    </form>`);
+}
+async function linkCode(f) {
+  const fd = new FormData(f); const code = fd.get('code'), t = fd.get('tag');
+  const a = S.assets.find(x => norm(x.tag) === norm(t)) || S.assets.find(x => x.serial && norm(x.serial) === norm(t)) || S.assets.find(x => codeKey(x.tag) === codeKey(t));
+  if (!a) throw new Error('No item with that tag or serial.');
+  if (!confirm(`Change ${a.tag} (${a.model}) to tag ${code}?`)) return;
+  const old = a.tag;
+  Object.assign(a, await api.update('assets', a.id, { tag: code, updated_at: new Date().toISOString(), updated_by: S.user.id }));
+  S.logs.unshift(await api.insert('logs', { asset_id: a.id, kind: 'Note', title: `QR code linked: ${code}`, details: `Tag changed from ${old}`, photos: [], created_by: S.user.id }));
+  toast('Linked'); closeModal(); location.hash = '#/asset/' + a.id;
 }
 
 /* ---------- items ---------- */
@@ -1046,6 +1095,7 @@ const ACT = {
     try { await api.resetPw(email); toast('Check your email for a reset link'); } catch (e) { toast(errMsg(e), 'bad'); }
   },
   'cam-start': camStart, 'cam-stop': camStop,
+  'add-from-code': d => assetModal(null, { tag: d.code }),
   'asset-new': () => assetModal(),
   'asset-edit': d => assetModal(assetById(d.id)),
   'asset-del': d => del('assets', d.id, 'Delete this item and its whole history? This can\'t be undone.', () => { S.logs = S.logs.filter(l => l.asset_id !== d.id); S.schedules = S.schedules.filter(s => s.asset_id !== d.id); location.hash = '#/assets'; }),
@@ -1080,7 +1130,7 @@ const FORMS = {
   },
   async newpw(f) { await api.setPw(new FormData(f).get('password')); S.recovery = false; toast('Password updated'); history.replaceState(null, '', location.pathname + '#/dashboard'); await boot(); },
   async lookup(f) { lookup(new FormData(f).get('code')); f.reset(); },
-  asset: submitAsset, log: submitLog, sched: submitSched, manual: submitManual,
+  'link-code': linkCode, asset: submitAsset, log: submitLog, sched: submitSched, manual: submitManual,
   async 'export-logs'(f) { const fd = new FormData(f); exportCSV('logs', { from: fd.get('from'), to: fd.get('to') }); },
 };
 document.addEventListener('submit', async e => {
@@ -1099,6 +1149,7 @@ document.addEventListener('input', e => {
 });
 document.addEventListener('change', async e => {
   const t = e.target;
+  if (t.dataset.photoScan !== undefined) return scanPhoto(t);
   if (t.dataset.filter && t.tagName === 'SELECT') { S.filter[t.dataset.filter] = t.value; $('#asset-list').innerHTML = assetTable(); return; }
   if (t.dataset.roleFor) {
     try { const p = await api.update('profiles', t.dataset.roleFor, { role: t.value }); Object.assign(S.profiles.find(x => x.id === p.id), p); toast('Access updated'); render(); }
