@@ -947,17 +947,18 @@ function logModal(assetId, pre = {}) {
       <div class="field"><label>Status after this</label><select name="status_after">${STATUSES.map(s => `<option ${s === (pre.status || statusFor(kind)) ? 'selected' : ''}>${s}</option>`).join('')}</select></div>
       <div class="field full" id="sched-field" ${kind === 'Service' && scheds.length ? '' : 'hidden'}><label>Scheduled task completed</label><select name="schedule_id"><option value="">— Not a scheduled task —</option>${scheds.map(s => `<option value="${s.id}" ${pre.schedule_id === s.id ? 'selected' : ''}>${h(s.task)}</option>`).join('')}</select></div>
       <div class="field full"><label>Summary</label><input name="title" required value="${h(pre.title || '')}" placeholder="${kind === 'Fault' ? 'e.g. Tilt stalls, colour wheel stuck' : 'What was done'}"></div>
-      <div class="field full"><label>Details</label><textarea name="details" placeholder="Symptoms, tests, findings, what fixed it"></textarea></div>
-      <div class="field full"><label>Parts used</label><input name="parts" placeholder="e.g. Lamp x1, fan x2"></div>
-      ${a.category === 'Console' ? '' : `<div class="field"><label>Lamp hours${hasH(a.lamp_hours) ? ` <span class="muted">(last ${fmtH(a.lamp_hours)})</span>` : ''}</label><input name="lamp_hours" type="number" step="any" min="0" inputmode="decimal" placeholder="Reading from the fixture"></div>
-      <div class="field"><label>Fixture hours${hasH(a.fixture_hours) ? ` <span class="muted">(last ${fmtH(a.fixture_hours)})</span>` : ''}</label><input name="fixture_hours" type="number" step="any" min="0" inputmode="decimal" placeholder="Reading from the fixture"></div>`}
-      <div class="field full"><label>Photos</label><input name="photos" type="file" accept="image/*" multiple></div>
+      <div class="field full"><label>Details</label><textarea name="details" required placeholder="Symptoms, tests, findings, what fixed it"></textarea></div>
+      <div class="field full"><label>Parts used</label><input name="parts" required placeholder="e.g. Lamp x1, fan x2 — or type None"></div>
+      ${a.category === 'Console' ? '' : `<div class="field"><label>Lamp hours${hasH(a.lamp_hours) ? ` <span class="muted">(last ${fmtH(a.lamp_hours)})</span>` : ''}</label><input name="lamp_hours" type="number" step="any" min="0" inputmode="decimal" required placeholder="Reading from the fixture"></div>
+      <div class="field"><label>Fixture hours${hasH(a.fixture_hours) ? ` <span class="muted">(last ${fmtH(a.fixture_hours)})</span>` : ''}</label><input name="fixture_hours" type="number" step="any" min="0" inputmode="decimal" required placeholder="Reading from the fixture"></div>`}
+      <div class="field full"><label>Photos (at least one)</label><input name="photos" type="file" accept="image/*" multiple required></div>
     </div>
-    <div class="modal-f"><button type="button" class="btn" data-act="modal-close">Cancel</button><button class="btn primary">Save entry</button></div></form>`);
+    <p class="muted small" style="margin:-4px 0 12px">All fields are required.</p><div class="modal-f"><button type="button" class="btn" data-act="modal-close">Cancel</button><button class="btn primary">Save entry</button></div></form>`);
   $('#modal-body [name=kind]').dataset.cur = a.status;
 }
 async function submitLog(f) {
   const fd = new FormData(f); const a = assetById(fd.get('asset_id'));
+  for (const [k, label] of [['title','Summary'],['details','Details'],['parts','Parts used']]) if (!String(fd.get(k) || '').trim()) throw new Error(label + ' is required.');
   const files = [...f.querySelector('[name=photos]').files];
   const photos = [];
   for (const file of files) { const blob = await compressImage(file); photos.push(await api.upload('photos', blob, (file.name || 'photo').replace(/\.\w+$/, '') + '.jpg')); }
