@@ -143,7 +143,9 @@ label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px;font-wei
 
 /* scan */
 .reader{width:100%;max-width:420px;margin:0 auto 14px;border-radius:12px;overflow:hidden;background:#000;min-height:0}
-.reader video{display:block}
+.reader{position:relative}.reader video{display:block;width:100%;height:auto}
+.aim{position:absolute;left:50%;top:50%;width:60%;aspect-ratio:1;transform:translate(-50%,-50%);border:3px solid var(--accent);border-radius:14px;box-shadow:0 0 0 999px rgba(0,0,0,.35);pointer-events:none}
+.cam-tools{position:absolute;left:0;right:0;bottom:10px;display:flex;gap:8px;justify-content:center}
 .scan-big{display:grid;place-items:center;gap:14px;text-align:center;padding:26px 10px}
 .scan-ring{width:110px;height:110px;border-radius:24px;border:2px dashed var(--line2);display:grid;place-items:center;color:var(--accent)}
 .scan-ring .ic{width:46px;height:46px}
@@ -210,7 +212,7 @@ label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px;font-wei
 </style>
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="qr.min.js"></script><!-- html5-qrcode v2.3.8, Apache-2.0, github.com/mebjas/html5-qrcode -->
+<script src="jsqr.js"></script><!-- jsQR, Apache-2.0, github.com/cozmo/jsQR -->
 </head>
 <body>
 <div id="app"><div class="center muted">Loading…</div></div>
@@ -662,51 +664,117 @@ function vScan() {
       <div class="row" style="justify-content:center"><button class="btn primary" data-act="cam-start">${ic('camera')} Start camera</button>
       <label class="btn" style="margin:0">${ic('camera')} Take a photo<input type="file" accept="image/*" capture="environment" data-photo-scan hidden></label></div>
     </div>
-    <div id="reader-file" hidden></div>
     <div class="note" id="cam-msg" hidden style="max-width:520px;margin:0 auto 14px;color:#f7cf86"></div>
     <div class="row" style="justify-content:center;margin-bottom:16px"><button class="btn" id="cam-stop" data-act="cam-stop" hidden>Stop camera</button></div>
     <form data-form="lookup" class="lookup"><input id="code-input" name="code" placeholder="Type an asset number or use a scanner gun" autocomplete="off" autocapitalize="characters" required><button class="btn">Find</button></form>
     <p class="muted small" style="text-align:center;margin-top:12px">Codes match an item's tag or serial — dashes, spaces and leading zeros don't matter (XFRAME-055 finds X-Frame 55). Unknown codes can be linked to an existing item or added new.</p>
   </section>`;
 }
-let qr = null;
+let qr = null;   /* live scanner state: { stream, track, video, timer, n } */
 function camProblem(e) {
   const s = (e?.name || '') + ' ' + errMsg(e);
   if (/NotAllowed|Permission|denied/i.test(s)) return 'Camera access is blocked for this site. Allow the camera in your browser settings (iPhone: Settings → Safari → Camera → Allow), then try again — or use "Take a photo".';
-  if (/NotFound|no camera|Requested device not found/i.test(s)) return 'No camera found on this device. Use "Take a photo" or type the code.';
+  if (/NotFound|no camera|Requested device not found|Overconstrained/i.test(s)) return 'No camera found on this device. Use "Take a photo" or type the code.';
   if (/NotReadable|in use|Could not start/i.test(s)) return 'The camera is busy in another app. Close it and try again, or use "Take a photo".';
   return 'The live camera couldn\'t start (' + s.trim() + '). Use "Take a photo" instead.';
 }
 function showCamMsg(msg) { const el = $('#cam-msg'); if (el) { el.textContent = msg; el.hidden = !msg; } }
+
+/* Decoder: jsQR, trying normal AND inverted codes (your stickers are white-on-black). */
+const scanCanvas = document.createElement('canvas');
+const scanCtx = scanCanvas.getContext('2d', { willReadFrequently: true });
+function decodeRegion(src, sx, sy, sw, sh, maxSide) {
+  const k = Math.min(1, maxSide / Math.max(sw, sh));
+  const w = Math.max(1, Math.round(sw * k)), hh = Math.max(1, Math.round(sh * k));
+  scanCanvas.width = w; scanCanvas.height = hh;
+  scanCtx.drawImage(src, sx, sy, sw, sh, 0, 0, w, hh);
+  const r = window.jsQR(scanCtx.getImageData(0, 0, w, hh).data, w, hh, { inversionAttempts: 'attemptBoth' });
+  return r && r.data ? r.data.trim() : null;
+}
+
 async function camStart() {
   showCamMsg('');
-  if (!window.Html5Qrcode) return showCamMsg('The scanner didn\'t load. Reload the page and try again.');
+  if (!window.jsQR) return showCamMsg('The scanner didn\'t load. Reload the page and try again.');
   if (!isSecureContext) return showCamMsg('The camera only works when the app is opened from its https:// web address.');
   if (!navigator.mediaDevices?.getUserMedia) return showCamMsg('This browser can\'t use the live camera (some in-app browsers block it). Open the link in Safari or Chrome, or use "Take a photo".');
-  $('#scan-idle').hidden = true; $('#cam-stop').hidden = false; $('#reader').hidden = false;
+  await camStop();
+  let stream;
   try {
-    qr = new Html5Qrcode('reader', { verbose: false });
-    await qr.start({ facingMode: 'environment' }, { fps: 10, aspectRatio: 1.333 },
-      txt => { camStop(); if (navigator.vibrate) navigator.vibrate(60); lookup(txt); });
-  } catch (e) {
-    try { qr?.clear(); } catch {}
-    qr = null; $('#scan-idle').hidden = false; $('#cam-stop').hidden = true; $('#reader').hidden = true;
-    showCamMsg(camProblem(e));
-  }
+    stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } } });
+  } catch (e) { return showCamMsg(camProblem(e)); }
+  const box = $('#reader'); if (!box) { stream.getTracks().forEach(t => t.stop()); return; }
+  box.innerHTML = `<video playsinline muted autoplay></video><div class="aim"></div><div class="cam-tools" id="cam-tools"></div>`;
+  const video = box.querySelector('video'); video.srcObject = stream;
+  $('#scan-idle').hidden = true; $('#cam-stop').hidden = false; box.hidden = false;
+  const track = stream.getVideoTracks()[0];
+  qr = { stream, track, video, timer: 0, n: 0, zoom: 1 };
+  try { await video.play(); } catch {}
+  try { await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }); } catch {}
+  camTools();
+  showCamMsg('');
+  const tick = () => {
+    if (!qr || qr.video !== video) return;
+    if (video.readyState >= 2 && video.videoWidth) {
+      const vw = video.videoWidth, vh = video.videoHeight; qr.n++;
+      if (qr.n === 1) { const aim = $('#reader .aim'); if (aim) aim.style.width = (75 * Math.min(vw, vh) / vw) + '%'; }
+      let txt = null;
+      try {
+        const side = Math.round(Math.min(vw, vh) * 0.75);                       // the aiming square, full detail
+        txt = decodeRegion(video, (vw - side) / 2, (vh - side) / 2, side, side, 900);
+        if (!txt && qr.n % 3 === 0) txt = decodeRegion(video, 0, 0, vw, vh, 1280);   // whole picture now and then
+      } catch {}
+      if (txt) { if (navigator.vibrate) navigator.vibrate(60); camStop(); lookup(txt); return; }
+      if (qr.n === 40) showCamMsg('Not picking it up? Move closer so the sticker fills the square, hold steady, and turn on the light if it\'s dark.');
+    }
+    qr.timer = setTimeout(tick, 120);
+  };
+  tick();
 }
-async function scanPhoto(input) {
-  const file = input.files?.[0]; input.value = ''; if (!file) return;
-  if (!window.Html5Qrcode) return showCamMsg('The scanner didn\'t load. Reload the page and try again.');
-  showCamMsg('Reading code…');
-  const r = new Html5Qrcode('reader-file', { verbose: false });
-  try { const txt = await r.scanFile(file, false); showCamMsg(''); lookup(txt); }
-  catch { showCamMsg('Couldn\'t find a QR code in that photo. Get closer so the code fills most of the picture, keep it in focus, and try again.'); }
-  finally { try { r.clear(); } catch {} }
+function camTools() {
+  const el = $('#cam-tools'); if (!el || !qr) return;
+  let caps = {}; try { caps = qr.track.getCapabilities?.() || {}; } catch {}
+  const btns = [];
+  if (caps.torch) btns.push(`<button type="button" class="btn sm" data-act="cam-torch">💡 Light</button>`);
+  if (caps.zoom && caps.zoom.max >= 2) btns.push(`<button type="button" class="btn sm" data-act="cam-zoom">🔍 Zoom ${qr.zoom > 1 ? '1×' : '2×'}</button>`);
+  el.innerHTML = btns.join('');
+}
+async function camTorch() {
+  if (!qr) return; qr.torch = !qr.torch;
+  try { await qr.track.applyConstraints({ advanced: [{ torch: qr.torch }] }); } catch { toast('Light not available on this camera', 'warn'); }
+}
+async function camZoom() {
+  if (!qr) return; const caps = qr.track.getCapabilities?.() || {};
+  qr.zoom = qr.zoom > 1 ? Math.max(1, caps.zoom?.min || 1) : Math.min(2, caps.zoom?.max || 2);
+  try { await qr.track.applyConstraints({ advanced: [{ zoom: qr.zoom }] }); } catch {}
+  camTools();
 }
 async function camStop() {
   if (!qr) return; const q = qr; qr = null;
-  try { await q.stop(); q.clear(); } catch {}
-  const idle = $('#scan-idle'); if (idle) { idle.hidden = false; $('#cam-stop').hidden = true; $('#reader').hidden = true; }
+  clearTimeout(q.timer);
+  try { q.stream.getTracks().forEach(t => t.stop()); } catch {}
+  const box = $('#reader'); if (box) { box.innerHTML = ''; box.hidden = true; }
+  const idle = $('#scan-idle'); if (idle) { idle.hidden = false; $('#cam-stop').hidden = true; }
+}
+async function scanPhoto(input) {
+  const file = input.files?.[0]; input.value = ''; if (!file) return;
+  if (!window.jsQR) return showCamMsg('The scanner didn\'t load. Reload the page and try again.');
+  showCamMsg('Reading code…');
+  await new Promise(r => setTimeout(r, 30));
+  let img;
+  try { img = await createImageBitmap(file, { imageOrientation: 'from-image' }); }
+  catch { try { img = await createImageBitmap(file); } catch { return showCamMsg('Couldn\'t open that photo.'); } }
+  const W = img.width, H = img.height, m = Math.min(W, H);
+  const tries = [
+    [0, 0, W, H, 1600],                                   // whole photo
+    [(W - m * .6) / 2, (H - m * .6) / 2, m * .6, m * .6, 1200],   // centre
+    [0, 0, W, H, 2600],                                   // whole photo, more detail
+  ];
+  for (let gy = 0; gy < 3; gy++) for (let gx = 0; gx < 3; gx++) tries.push([gx * W / 4, gy * H / 4, W / 2, H / 2, 1200]);  // overlapping quarters
+  let txt = null;
+  for (const [x, y, w, hh, max] of tries) { try { txt = decodeRegion(img, x, y, w, hh, max); } catch {} if (txt) break; await new Promise(r => setTimeout(r, 0)); }
+  img.close?.();
+  if (txt) { showCamMsg(''); lookup(txt); }
+  else showCamMsg('Couldn\'t find a QR code in that photo. Get closer so the sticker is big in the picture, keep it in focus, and avoid glare.');
 }
 function lookup(raw, fromRoute) {
   let code = String(raw || '').trim();
@@ -1324,7 +1392,7 @@ const ACT = {
     const email = $('[name=email]')?.value || prompt('Your email address:'); if (!email) return;
     try { await api.resetPw(email); toast('Check your email for a reset link'); } catch (e) { toast(errMsg(e), 'bad'); }
   },
-  'cam-start': camStart, 'cam-stop': camStop,
+  'cam-start': camStart, 'cam-stop': camStop, 'cam-torch': camTorch, 'cam-zoom': camZoom,
   'add-from-code': d => assetModal(null, { tag: d.code }),
   'asset-new': () => assetModal(),
   'asset-edit': d => assetModal(assetById(d.id)),
