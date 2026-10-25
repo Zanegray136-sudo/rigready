@@ -642,7 +642,7 @@ function vDashboard() {
   <div class="grid2">
     <section class="card"><h2>Faulty now</h2>
       ${bad.length ? `<ul class="list">${bad.map(a => { const l = S.logs.find(x => x.asset_id === a.id && x.kind === 'Fault');
-        return `<li><a href="#/asset/${a.id}" class="tag">${h(a.tag)}</a><span>${h(a.model)}</span>${pill(a.status)}<span class="spacer"></span><span class="muted small">${a.faulty_since ? daysSince(a.faulty_since) + ' d' : ''}</span>${l ? `<div class="muted small" style="width:100%">${h(l.title)}</div>` : ''}</li>`; }).join('')}</ul>` : '<p class="empty">Nothing faulty. Nice.</p>'}
+        return `<li><a href="#/asset/${a.id}" class="tag">${h(a.tag)}</a><span>${h(a.model)}</span>${pill(a.status)}<span class="spacer"></span><span class="muted small">${a.faulty_since ? daysSince(a.faulty_since) + ' d' : ''}</span>${l || a.location ? `<div class="muted small" style="width:100%">${l ? h(l.title) : ''}${l && a.location ? ' · ' : ''}${a.location ? '📍 ' + h(a.location) : ''}</div>` : ''}</li>`; }).join('')}</ul>` : '<p class="empty">Nothing faulty. Nice.</p>'}
     </section>
     <section class="card"><h2>Service due</h2>
       ${over.length + soon.length ? `<ul class="list">${[...over, ...soon].slice(0, 10).map(d => `<li><a href="#/asset/${d.a.id}" class="tag">${h(d.a.tag)}</a><span>${h(d.s.task)}</span><span class="spacer"></span>${duePill(d)}<span class="muted small" style="width:100%">${h(d.a.model)} · ${dueText(d)}</span></li>`).join('')}</ul>
@@ -925,7 +925,7 @@ function logItem(l, showAsset) {
   return `<li class="log k-${slug(l.kind)}"><div class="log-dot"></div><div>
     <div class="log-top"><span class="kind">${h(l.kind)}</span><strong>${h(l.title)}</strong>${a ? `<a href="#/asset/${a.id}" class="tag">${h(a.tag)}</a><span class="muted small">${h(a.model)}</span>` : ''}</div>
     ${l.details ? `<p>${h(l.details)}</p>` : ''}
-    <div class="meta"><span>${fmtDT(l.created_at)}</span><span>· ${h(whoOf(l))}</span>${l.parts ? `<span>· Parts: ${h(l.parts)}</span>` : ''}${hasH(l.lamp_hours) ? `<span>· Lamp ${fmtH(l.lamp_hours)}</span>` : ''}${hasH(l.fixture_hours) ? `<span>· Fixture ${fmtH(l.fixture_hours)}</span>` : ''}${l.status_after ? `<span>·</span>${pill(l.status_after)}` : ''}</div>
+    <div class="meta"><span>${fmtDT(l.created_at)}</span><span>· ${h(whoOf(l))}</span>${l.location ? `<span>· 📍 ${h(l.location)}</span>` : ''}${l.parts ? `<span>· Parts: ${h(l.parts)}</span>` : ''}${hasH(l.lamp_hours) ? `<span>· Lamp ${fmtH(l.lamp_hours)}</span>` : ''}${hasH(l.fixture_hours) ? `<span>· Fixture ${fmtH(l.fixture_hours)}</span>` : ''}${l.status_after ? `<span>·</span>${pill(l.status_after)}` : ''}</div>
     ${l.photos?.length ? `<div class="thumbs">${l.photos.map(p => `<img class="thumb" alt="Photo" data-bucket="photos" data-path="${h(p)}" data-act="photo-open" data-p="${h(p)}">`).join('')}</div>` : ''}
   </div>${canDel && !showAsset ? `<button class="icon-btn" title="Delete entry" data-act="log-del" data-id="${l.id}">${ic('trash')}</button>` : '<span></span>'}</li>`;
 }
@@ -1254,13 +1254,14 @@ function logModal(assetId, pre = {}) {
   const kind = pre.kind || (BAD.includes(a.status) ? 'Repair' : 'Inspection');
   const scheds = S.schedules.filter(s => scheduleTargets(s).some(x => x.id === a.id));
   const statusFor = k => k === 'Fault' ? (BAD.includes(a.status) ? a.status : 'Faulty') : k === 'Repair' ? 'OK' : a.status;
-  openModal(`Log entry — ${a.tag}`, `<form data-form="log"><input type="hidden" name="asset_id" value="${a.id}">
+  openModal(`Log entry — ${a.tag}`, `<form data-form="log">${datalists()}<input type="hidden" name="asset_id" value="${a.id}">
     <div class="fgrid">
       <div class="field"><label>Type</label><select name="kind">${KINDS.map(k => `<option ${k === kind ? 'selected' : ''}>${k}</option>`).join('')}</select></div>
       <div class="field"><label>Status after this</label><select name="status_after">${STATUSES.map(s => `<option ${s === (pre.status || statusFor(kind)) ? 'selected' : ''}>${s}</option>`).join('')}</select></div>
       <div class="field full" id="sched-field" ${kind === 'Service' && scheds.length ? '' : 'hidden'}><label>Scheduled task completed</label><select name="schedule_id"><option value="">— Not a scheduled task —</option>${scheds.map(s => `<option value="${s.id}" ${pre.schedule_id === s.id ? 'selected' : ''}>${h(s.task)}</option>`).join('')}</select></div>
       <div class="field full"><label>Summary</label><input name="title" required value="${h(pre.title || '')}" placeholder="${kind === 'Fault' ? 'e.g. Tilt stalls, colour wheel stuck' : 'What was done'}"></div>
       <div class="field full"><label>Details</label><textarea name="details" required placeholder="Symptoms, tests, findings, what fixed it"></textarea></div>
+      <div class="field full"><label>Where is the light now?</label><input name="location" list="dl-loc" required value="${h(a.location || '')}" placeholder="e.g. Repair bench, Rack 3, Truck 2, On site – Mundi Mundi" autocomplete="off"></div>
       <div class="field full"><label>Parts used</label><input name="parts" required placeholder="e.g. Lamp x1, fan x2 — or type None"></div>
       ${a.category === 'Console' ? '' : `<div class="field"><label>Lamp hours${hasH(a.lamp_hours) ? ` <span class="muted">(last ${fmtH(a.lamp_hours)})</span>` : ''}</label><input name="lamp_hours" type="number" step="any" min="0" inputmode="decimal" required placeholder="Reading from the fixture"></div>
       <div class="field"><label>Fixture hours${hasH(a.fixture_hours) ? ` <span class="muted">(last ${fmtH(a.fixture_hours)})</span>` : ''}</label><input name="fixture_hours" type="number" step="any" min="0" inputmode="decimal" required placeholder="Reading from the fixture"></div>`}
@@ -1271,18 +1272,19 @@ function logModal(assetId, pre = {}) {
 }
 async function submitLog(f) {
   const fd = new FormData(f); const a = assetById(fd.get('asset_id'));
-  for (const [k, label] of [['title','Summary'],['details','Details'],['parts','Parts used']]) if (!String(fd.get(k) || '').trim()) throw new Error(label + ' is required.');
+  for (const [k, label] of [['title','Summary'],['details','Details'],['location','Location'],['parts','Parts used']]) if (!String(fd.get(k) || '').trim()) throw new Error(label + ' is required.');
   const files = [...f.querySelector('[name=photos]').files];
   const photos = [];
   for (const file of files) { const blob = await compressImage(file); photos.push(await api.upload('photos', blob, (file.name || 'photo').replace(/\.\w+$/, '') + '.jpg')); }
   const lampH = numOrNull(fd.get('lamp_hours')), fixH = numOrNull(fd.get('fixture_hours'));
   const kind = fd.get('kind'), status_after = fd.get('status_after');
   const row = { asset_id: a.id, kind, title: fd.get('title').trim(), details: fd.get('details').trim(), parts: fd.get('parts').trim(),
-    lamp_hours: lampH, fixture_hours: fixH, status_after: status_after !== a.status || kind === 'Fault' || kind === 'Repair' ? status_after : null,
+    location: fd.get('location').trim(), lamp_hours: lampH, fixture_hours: fixH, status_after: status_after !== a.status || kind === 'Fault' || kind === 'Repair' ? status_after : null,
     schedule_id: kind === 'Service' ? (fd.get('schedule_id') || null) : null, photos, created_by: S.user.id };
   const log = await api.insert('logs', row); S.logs.unshift(log);
   const patch = {};
   if (status_after !== a.status) Object.assign(patch, statusPatch(a, status_after));
+  if (row.location !== (a.location || '')) patch.location = row.location;
   if (lampH != null && lampH !== Number(a.lamp_hours)) patch.lamp_hours = lampH;
   if (fixH != null && fixH !== Number(a.fixture_hours)) patch.fixture_hours = fixH;
   if (Object.keys(patch).length) { patch.updated_at = new Date().toISOString(); patch.updated_by = S.user.id; Object.assign(a, await api.update('assets', a.id, patch)); }
@@ -1385,7 +1387,7 @@ function exportCSV(what, opts = {}) {
     const rows = S.logs.filter(l => { const d = new Date(l.created_at); return d >= from && d <= to; }).sort(byNewest);
     downloadText(`maintenance-log-${stamp()}.csv`, toCSV(rows, [
       ['Date', l => fmtDT(l.created_at)], ['Asset tag', l => tagOf(l.asset_id)], ['Model', l => assetById(l.asset_id)?.model || ''], ['Type', l => l.kind], ['Summary', l => l.title],
-      ['Details', l => l.details], ['Parts', l => l.parts], ['Lamp hours', l => l.lamp_hours], ['Fixture hours', l => l.fixture_hours], ['Status after', l => l.status_after], ['By', l => whoOf(l)], ['Photos', l => l.photos?.length || 0]]));
+      ['Details', l => l.details], ['Location', l => l.location || ''], ['Parts', l => l.parts], ['Lamp hours', l => l.lamp_hours], ['Fixture hours', l => l.fixture_hours], ['Status after', l => l.status_after], ['By', l => whoOf(l)], ['Photos', l => l.photos?.length || 0]]));
     toast(`${rows.length} entries exported`);
   }
 }

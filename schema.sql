@@ -121,6 +121,7 @@ create table public.logs (
   status_after  text,
   schedule_id   uuid references public.schedules(id) on delete set null,
   photos        text[] not null default '{}',
+  location      text,                          -- where the light was when this was logged
   tech_name     text,                          -- name from imported records (no account)
   source        text,                          -- e.g. 'excel-import'
   created_by    uuid references public.profiles(id) on delete set null default auth.uid(),
