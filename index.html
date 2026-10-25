@@ -453,7 +453,8 @@ const api = DEMO ? demoApi() : supabaseApi();
    ============================================================ */
 const S = { booted:false, user:null, profile:null, recovery:false, authTab:'signin',
   assets:[], logs:[], schedules:[], manuals:[], profiles:[], parts:[], part_moves:[], partsMissing:false,
-  filter:{ q:'', cat:'', status:'' }, dueTab:'due', manualQ:'', partQ:'', partMake:'' };
+  filter:{ q:'', cat:'', status:'' }, dueTab:'due', manualQ:'', partQ:'', partMake:'',
+  afterScan: (() => { try { return localStorage.getItem('rr-after-scan') || 'open'; } catch { return 'open'; } })() };
 
 async function loadAll() {
   const [assets, logs, schedules, manuals, profiles] = await Promise.all(['assets','logs','schedules','manuals','profiles'].map(t => api.all(t)));
@@ -667,7 +668,10 @@ function vScan() {
     <div class="note" id="cam-msg" hidden style="max-width:520px;margin:0 auto 14px;color:#f7cf86"></div>
     <div class="row" style="justify-content:center;margin-bottom:16px"><button class="btn" id="cam-stop" data-act="cam-stop" hidden>Stop camera</button></div>
     <form data-form="lookup" class="lookup"><input id="code-input" name="code" placeholder="Type an asset number or use a scanner gun" autocomplete="off" autocapitalize="characters" required><button class="btn">Find</button></form>
+    <div class="row" style="justify-content:center;margin-top:14px"><label for="after-scan" style="margin:0">After a scan</label>
+      <select id="after-scan" data-after-scan style="width:auto">${[['open','Open the light'],['log','Start a log entry'],['fault','Report a fault']].map(([v, l]) => `<option value="${v}" ${S.afterScan === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
     <p class="muted small" style="text-align:center;margin-top:12px">Codes match an item's tag or serial — dashes, spaces and leading zeros don't matter (XFRAME-055 finds X-Frame 55). Unknown codes can be linked to an existing item or added new.</p>
+    <p class="muted small" style="text-align:center;margin-top:6px">🔫 USB / Bluetooth scanner: scan from any page — you don't need to be here.</p>
   </section>`;
 }
 let qr = null;   /* live scanner state: { stream, track, video, timer, n } */
@@ -816,7 +820,13 @@ function lookup(raw, fromRoute) {
   const k = codeKey(code);
   const a = S.assets.find(x => norm(x.tag) === norm(code)) || S.assets.find(x => x.serial && norm(x.serial) === norm(code))
     || S.assets.find(x => codeKey(x.tag) === k) || S.assets.find(x => x.serial && codeKey(x.serial) === k);
-  if (a) { const to = '#/asset/' + a.id; fromRoute ? location.replace(to) : (location.hash = to); return; }
+  if (a) {
+    const to = '#/asset/' + a.id; beep(true);
+    fromRoute ? location.replace(to) : (location.hash = to);
+    if (!fromRoute && S.afterScan !== 'open') setTimeout(() => logModal(a.id, S.afterScan === 'fault' ? { kind: 'Fault' } : {}), 60);
+    return;
+  }
+  beep(false);
   if (fromRoute) location.replace('#/scan');
   unknownModal(code);
 }
@@ -1462,6 +1472,42 @@ document.addEventListener('click', e => {
 $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#modal.open')) closeModal(); });
 
+/* ---------- USB / Bluetooth scanner guns (they 'type' fast and finish with Enter or Tab) ---------- */
+const gun = { buf: '', first: 0, last: 0 };
+function isTyping(el) { return el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)); }
+document.addEventListener('keydown', e => {
+  if (!S.profile || S.profile.role === 'pending' || e.ctrlKey || e.metaKey || e.altKey) return;
+  const el = e.target;
+  // Scanner ending with Tab inside the Scan box: treat Tab like Enter
+  if (e.key === 'Tab' && el.id === 'code-input' && el.value.trim()) { e.preventDefault(); el.form.requestSubmit(); return; }
+  if (isTyping(el) || $('#modal.open')) { gun.buf = ''; return; }
+  const now = performance.now();
+  if (now - gun.last > 80) { gun.buf = ''; gun.first = now; }       // a human-speed gap starts over
+  gun.last = now;
+  if (e.key === 'Enter' || e.key === 'Tab') {
+    const code = gun.buf, fast = code.length >= 3 && (now - gun.first) / code.length < 40;
+    gun.buf = '';
+    if (fast) { e.preventDefault(); lookup(code); }
+    return;
+  }
+  if (e.key.length === 1) gun.buf += e.key;
+});
+
+/* ---------- beep: high = found, low double = not found ---------- */
+let audioCtx = null;
+function beep(ok) {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const tones = ok ? [[1320, 0, .09]] : [[220, 0, .14], [220, .2, .14]];
+    for (const [f, at, len] of tones) {
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain(), t = audioCtx.currentTime + at;
+      o.type = ok ? 'sine' : 'square'; o.frequency.value = f; o.connect(g); g.connect(audioCtx.destination);
+      g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(ok ? .25 : .12, t + .01); g.gain.exponentialRampToValueAtTime(.0001, t + len);
+      o.start(t); o.stop(t + len + .02);
+    }
+  } catch {}
+}
+
 const FORMS = {
   async signin(f) { const fd = new FormData(f); await api.signIn(fd.get('email').trim(), fd.get('password')); },
   async signup(f) {
@@ -1491,6 +1537,7 @@ document.addEventListener('input', e => {
 document.addEventListener('change', async e => {
   const t = e.target;
   if (t.dataset.photoScan !== undefined) return scanPhoto(t);
+  if (t.dataset.afterScan !== undefined) { S.afterScan = t.value; try { localStorage.setItem('rr-after-scan', t.value); } catch {} toast('Saved for this device'); return; }
   if (t.dataset.filter === 'partMake') { S.partMake = t.value; $('#part-list').innerHTML = partTable(); return; }
   if (t.dataset.filter && t.tagName === 'SELECT') { S.filter[t.dataset.filter] = t.value; $('#asset-list').innerHTML = assetTable(); return; }
   if (t.dataset.roleFor) {
