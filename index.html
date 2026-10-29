@@ -98,6 +98,7 @@ label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px;font-wei
 .s-in-repair{color:var(--warn);background:rgba(245,165,36,.13)}
 .s-out-of-service{color:#ff8a5d;background:rgba(255,138,93,.13)}
 .s-retired{color:var(--grey);background:rgba(107,115,133,.15)}
+.s-away{color:var(--info);background:rgba(90,169,255,.13)}
 .d-overdue{color:var(--bad);background:rgba(255,93,93,.13)}
 .d-soon{color:var(--warn);background:rgba(245,165,36,.13)}
 .d-ok{color:var(--ok);background:rgba(62,207,142,.12)}
@@ -226,7 +227,7 @@ label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px;font-wei
    ============================================================ */
 const CFG = Object.assign({ SUPABASE_URL:'', SUPABASE_ANON_KEY:'', APP_NAME:'RigReady', FAULT_ALERT_DAYS:60, DUE_SOON_DAYS:14 }, window.RIGREADY_CONFIG || {});
 const DEMO = !CFG.SUPABASE_URL || !CFG.SUPABASE_ANON_KEY;
-const BUILD = '2026-10-30.1';   // bump together with version.json on every release
+const BUILD = '2026-10-30.2';   // bump together with version.json on every release
 const sb = (!DEMO && window.supabase) ? window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY) : null;
 
 const BAD = ['Faulty','In repair','Out of service'];
@@ -275,6 +276,7 @@ const P = {
   trash:'<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>', logout:'<path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h11"/>',
   camera:'<path d="M3 8h4l2-3h6l2 3h4v12H3z"/><circle cx="12" cy="13" r="4"/>', check:'<path d="M5 12l5 5 9-10"/>',
   clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', file:'<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/>',
+  truck:'<path d="M3 6h11v10H3zM14 9h4l3 3v4h-7"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/>',
   refresh:'<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/>',
 };
 const ic = n => `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[n] || ''}</svg>`;
@@ -352,6 +354,7 @@ function demoApi() {
     if (mem) return mem;
     try { const r = localStorage.getItem(KEY); if (r) mem = JSON.parse(r); } catch {}
     if (!mem) { mem = demoSeed(); save(); }
+    if (!mem.repair_jobs) { mem.repair_jobs = []; save(); }
     if (!mem.parts) { const x = demoParts(mem.assets); mem.parts = x.parts; mem.part_moves = x.part_moves; save(); }
     return mem;
   };
@@ -380,7 +383,7 @@ function demoApi() {
       if (t === 'part_moves') { const m = d.part_moves.find(x => x.id === id); const pt = m && d.parts.find(x => x.id === m.part_id); if (pt) pt.quantity -= m.change; }
       if (t === 'parts') d.part_moves = d.part_moves.filter(m => m.part_id !== id);
       d[t] = d[t].filter(r => r.id !== id);
-      if (t === 'assets') { d.logs = d.logs.filter(l => l.asset_id !== id); d.schedules = d.schedules.filter(s => s.asset_id !== id); }
+      if (t === 'assets') { d.repair_jobs = (d.repair_jobs || []).filter(j => j.asset_id !== id); d.logs = d.logs.filter(l => l.asset_id !== id); d.schedules = d.schedules.filter(s => s.asset_id !== id); }
       save();
     },
     async upload(b, blob, name) {
@@ -436,7 +439,11 @@ function demoSeed() {
     { id:'demo-tech', name:'Sam (tech)', email:'sam@example.com', role:'tech', created_at: ago(300) },
     { id:'demo-new', name:'New starter', email:'new@example.com', role:'pending', created_at: ago(1) },
   ];
-  return { assets: a, schedules: s, logs, manuals, profiles, files: {}, ...demoParts(a) };
+  const repair_jobs = [
+    { id: uid(), asset_id: T('LX-0211'), repairer: 'ShowTech', job_no: 'ST-40211', fault: 'Zoom drifting, main board suspected', sent_at: ago(40).slice(0, 10), expected_back: ago(12).slice(0, 10), returned_at: null, outcome: null, cost: null, notes: '', created_by: 'demo-admin', created_at: ago(40) },
+    { id: uid(), asset_id: T('LX-0101'), repairer: 'ShowTech', job_no: 'ST-39880', fault: 'Tilt encoder', sent_at: ago(120).slice(0, 10), expected_back: ago(100).slice(0, 10), returned_at: ago(95).slice(0, 10), outcome: 'Fixed', cost: 286.5, notes: 'Replaced tilt encoder', created_by: 'demo-admin', created_at: ago(120) },
+  ];
+  return { assets: a, schedules: s, logs, manuals, profiles, files: {}, repair_jobs, ...demoParts(a) };
 }
 function demoParts(assets) {
   const ago = d => new Date(Date.now() - d * DAY).toISOString();
@@ -462,7 +469,7 @@ const api = DEMO ? demoApi() : supabaseApi();
    STATE
    ============================================================ */
 const S = { booted:false, user:null, profile:null, recovery:false, authTab:'signin',
-  assets:[], logs:[], schedules:[], manuals:[], profiles:[], parts:[], part_moves:[], partsMissing:false,
+  assets:[], logs:[], schedules:[], manuals:[], profiles:[], parts:[], part_moves:[], partsMissing:false, repair_jobs:[], repairsMissing:false,
   filter:{ q:'', cat:'', status:'' }, dueTab:'due', manualQ:'', partQ:'', partMake:'',
   afterScan: (() => { try { return localStorage.getItem('rr-after-scan') || 'open'; } catch { return 'open'; } })() };
 
@@ -471,16 +478,18 @@ async function loadAll() {
   Object.assign(S, { assets, logs, schedules, manuals, profiles });
   try { const [parts, part_moves] = await Promise.all([api.all('parts'), api.all('part_moves')]); Object.assign(S, { parts, part_moves, partsMissing: false }); }
   catch { Object.assign(S, { parts: [], part_moves: [], partsMissing: true }); }
+  try { Object.assign(S, { repair_jobs: await api.all('repair_jobs'), repairsMissing: false }); }
+  catch { Object.assign(S, { repair_jobs: [], repairsMissing: true }); }
 }
 
 /* ---------- saved copy on this device: instant open + offline viewing ---------- */
-const SYNC_TABLES = ['assets', 'logs', 'schedules', 'manuals', 'profiles', 'parts', 'part_moves'];
+const SYNC_TABLES = ['assets', 'logs', 'schedules', 'manuals', 'profiles', 'parts', 'part_moves', 'repair_jobs'];
 const cacheKey = id => 'rr-data-v1:' + id;
 let saveTimer = 0;
 function saveCache() {
   if (DEMO || !S.user || !S.profile || S.profile.role === 'pending') return;
   try {
-    const d = { at: S.lastSync || Date.now(), profile: S.profile, partsMissing: S.partsMissing };
+    const d = { at: S.lastSync || Date.now(), profile: S.profile, partsMissing: S.partsMissing, repairsMissing: S.repairsMissing };
     for (const t of SYNC_TABLES) d[t] = S[t];
     localStorage.setItem(cacheKey(S.user.id), JSON.stringify(d));
   } catch {}
@@ -494,7 +503,7 @@ async function boot() {
   const c = S.user && !DEMO ? readCache(S.user.id) : null;
   if (c && c.profile && c.profile.role !== 'pending') {          // show the saved copy straight away…
     for (const t of SYNC_TABLES) S[t] = c[t] || [];
-    Object.assign(S, { profile: c.profile, partsMissing: !!c.partsMissing, lastSync: c.at, booted: true });
+    Object.assign(S, { profile: c.profile, partsMissing: !!c.partsMissing, repairsMissing: !!c.repairsMissing, lastSync: c.at, booted: true });
     render();
     sync(true);                                                 // …then freshen it in the background
     return;
@@ -541,12 +550,14 @@ function statusPatch(a, st) {
 let IDX = null;
 function idx() {
   if (IDX) return IDX;
-  const logs = new Map(), moves = new Map(), byModel = new Map();
+  const logs = new Map(), moves = new Map(), byModel = new Map(), jobs = new Map();
+  for (const j of S.repair_jobs) { let a = jobs.get(j.asset_id); if (!a) jobs.set(j.asset_id, a = []); a.push(j); }
+  for (const a of jobs.values()) a.sort((x, y) => String(y.sent_at).localeCompare(String(x.sent_at)));
   for (const l of S.logs) { let a = logs.get(l.asset_id); if (!a) logs.set(l.asset_id, a = []); a.push(l); }
   for (const a of logs.values()) a.sort(byNewest);
   for (const m of S.part_moves) { if (!m.asset_id) continue; let a = moves.get(m.asset_id); if (!a) moves.set(m.asset_id, a = []); a.push(m); }
   for (const a of S.assets) { if (a.status === 'Retired') continue; const k = norm(a.make) + '|' + norm(a.model); let x = byModel.get(k); if (!x) byModel.set(k, x = []); x.push(a); }
-  return IDX = { logs, moves, byModel, due: null };
+  return IDX = { logs, moves, byModel, jobs, due: null };
 }
 const logsFor = id => idx().logs.get(id) || [];
 const movesFor = id => idx().moves.get(id) || [];
@@ -611,7 +622,7 @@ function render() {
   if (!S.user) { app.innerHTML = vLogin(); return; }
   if (!S.profile || S.profile.role === 'pending') { app.innerHTML = vPending(); return; }
   if (r.p === 'tag') { lookup(r.arg, true); return; }
-  const views = { parts:vParts, part:() => vPart(r.arg), dashboard:vDashboard, scan:vScan, assets:vAssets, asset:() => vAsset(r.arg), schedules:vSchedules, manuals:vManuals, reports:vReports, team:vTeam };
+  const views = { repairs:vRepairs, parts:vParts, part:() => vPart(r.arg), dashboard:vDashboard, scan:vScan, assets:vAssets, asset:() => vAsset(r.arg), schedules:vSchedules, manuals:vManuals, reports:vReports, team:vTeam };
   app.innerHTML = shell(r.p, (views[r.p] || vDashboard)());
   document.body.classList.remove('nav-open');
   hydrateImages();
@@ -632,6 +643,7 @@ function shell(p, body) {
         ${item('dashboard','home','Dashboard', lf)}
         ${item('scan','scan','Scan')}
         ${item('assets','box','Items')}
+        ${item('repairs','truck','Away for repair', S.repairsMissing ? 0 : openJobs().filter(jobOverdue).length)}
         ${item('schedules','clock','Service schedule', over)}
         ${item('parts','parts','Spare parts', S.parts.filter(isLow).length)}
         ${item('manuals','book','Manuals')}
@@ -707,17 +719,18 @@ function vDashboard() {
     ${stat('Service overdue', over.length, over.length ? 'warn' : '', '#/schedules')}
   </div>
   ${lf.length ? `<section class="alert bad"><div class="alert-h">${ic('alert')} ${lf.length} item${lf.length > 1 ? 's have' : ' has'} been faulty for over ${Math.round(CFG.FAULT_ALERT_DAYS / 30)} months</div>
-    <ul>${lf.map(a => `<li><a href="#/asset/${a.id}" class="tag">${h(a.tag)}</a><span>${h(a.make)} ${h(a.model)}</span>${pill(a.status)}<span class="spacer"></span><strong>${daysSince(a.faulty_since)} days</strong><span class="muted small">since ${fmtDate(a.faulty_since)}</span></li>`).join('')}</ul></section>` : ''}
+    <ul>${lf.map(a => `<li><a href="#/asset/${a.id}" class="tag">${h(a.tag)}</a><span>${h(a.make)} ${h(a.model)}</span>${apill(a)}<span class="spacer"></span><strong>${daysSince(a.faulty_since)} days</strong><span class="muted small">since ${fmtDate(a.faulty_since)}</span></li>`).join('')}</ul></section>` : ''}
   <div class="grid2">
     <section class="card"><h2>Faulty now</h2>
       ${bad.length ? `<ul class="list">${bad.map(a => { const l = logsFor(a.id).find(x => x.kind === 'Fault');
-        return `<li><a href="#/asset/${a.id}" class="tag">${h(a.tag)}</a><span>${h(a.model)}</span>${pill(a.status)}<span class="spacer"></span><span class="muted small">${a.faulty_since ? daysSince(a.faulty_since) + ' d' : ''}</span>${l || a.location ? `<div class="muted small" style="width:100%">${l ? h(l.title) : ''}${l && a.location ? ' · ' : ''}${a.location ? '📍 ' + h(a.location) : ''}</div>` : ''}</li>`; }).join('')}</ul>` : '<p class="empty">Nothing faulty. Nice.</p>'}
+        return `<li><a href="#/asset/${a.id}" class="tag">${h(a.tag)}</a><span>${h(a.model)}</span>${apill(a)}<span class="spacer"></span><span class="muted small">${a.faulty_since ? daysSince(a.faulty_since) + ' d' : ''}</span>${l || a.location ? `<div class="muted small" style="width:100%">${l ? h(l.title) : ''}${l && a.location ? ' · ' : ''}${a.location ? '📍 ' + h(a.location) : ''}</div>` : ''}</li>`; }).join('')}</ul>` : '<p class="empty">Nothing faulty. Nice.</p>'}
     </section>
     <section class="card"><h2>Service due</h2>
       ${over.length + soon.length ? `<ul class="list">${[...over, ...soon].slice(0, 10).map(d => `<li><a href="#/asset/${d.a.id}" class="tag">${h(d.a.tag)}</a><span>${h(d.s.task)}</span><span class="spacer"></span>${duePill(d)}<span class="muted small" style="width:100%">${h(d.a.model)} · ${dueText(d)}</span></li>`).join('')}</ul>
         ${over.length + soon.length > 10 ? `<p style="margin-top:10px"><a href="#/schedules" class="small muted">See all ${over.length + soon.length} →</a></p>` : ''}` : '<p class="empty">No services due in the next ' + CFG.DUE_SOON_DAYS + ' days.</p>'}
     </section>
   </div>
+  <div style="margin-top:16px">${S.repairsMissing ? '' : awayCard()}</div>
   <section class="card" style="margin-top:16px"><h2>Recent activity</h2>
     ${S.logs.length ? `<ul class="tl">${S.logs.slice(0, 8).map(l => logItem(l, true)).join('')}</ul>` : '<p class="empty">No log entries yet. Scan an item to start.</p>'}
   </section>`;
@@ -952,7 +965,7 @@ function assetTable() {
   return `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Tag</th><th>Item</th><th class="hide-m">Type</th><th class="hide-m">Location</th><th>Status</th><th class="hide-m">Lamp h</th><th class="hide-m">Fixture h</th><th class="hide-m">Last activity</th></tr></thead><tbody>
   ${rows.map(a => { const l = lastActivity(a); return `<tr class="click" data-act="go" data-href="#/asset/${a.id}">
     <td><span class="tag">${h(a.tag)}</span></td><td><div>${h(a.make)} ${h(a.model)}</div>${a.serial ? `<div class="muted small mono">${h(a.serial)}</div>` : ''}</td>
-    <td class="hide-m">${h(a.category)}</td><td class="hide-m">${h(a.location || '—')}</td><td>${pill(a.status)}</td>
+    <td class="hide-m">${h(a.category)}</td><td class="hide-m">${h(a.location || '—')}</td><td>${apill(a)}</td>
     <td class="hide-m">${fmtH(a.lamp_hours)}</td><td class="hide-m">${fmtH(a.fixture_hours)}</td><td class="hide-m muted small">${l ? h(l.kind) + ' · ' + fmtDate(l.created_at) : '—'}</td></tr>`; }).join('')}
   </tbody></table></div>${more ? `<div class="row" style="justify-content:center;margin-top:14px"><button class="btn" data-act="assets-more">Show ${more} more</button></div>` : ''}`;
 }
@@ -970,10 +983,11 @@ function vAsset(id) {
   <p class="small" style="margin-bottom:10px"><a href="#/assets" class="muted" style="text-decoration:none">← Items</a></p>
   <div class="a-head">
     <div><h1><span class="tag">${h(a.tag)}</span> &nbsp;${h(a.make)} ${h(a.model)}</h1>
-      <div class="row" style="margin-top:8px">${pill(a.status)}${BAD.includes(a.status) && a.faulty_since ? `<span class="muted small">for ${daysSince(a.faulty_since)} days (since ${fmtDate(a.faulty_since)})</span>` : ''}</div></div>
+      <div class="row" style="margin-top:8px">${apill(a)}${BAD.includes(a.status) && a.faulty_since ? `<span class="muted small">for ${daysSince(a.faulty_since)} days (since ${fmtDate(a.faulty_since)})</span>` : ''}</div></div>
     <div class="row">
       <button class="btn primary" data-act="log-new" data-id="${a.id}">${ic('plus')} Log entry</button>
       ${a.status === 'OK' ? `<button class="btn" data-act="log-new" data-id="${a.id}" data-kind="Fault">${ic('alert')} Report fault</button>` : `<button class="btn" data-act="log-new" data-id="${a.id}" data-kind="Repair">${ic('check')} Log repair</button>`}
+      ${S.repairsMissing || a.status === 'Retired' ? '' : openJob(a.id) ? `<button class="btn" data-act="repair-return" data-id="${openJob(a.id).id}">${ic('truck')} Back from ${h(openJob(a.id).repairer)}</button>` : `<button class="btn" data-act="repair-send" data-id="${a.id}">${ic('truck')} Send for repair</button>`}
       <button class="btn" data-act="asset-edit" data-id="${a.id}">${ic('edit')} Edit</button>
       <button class="btn" data-act="print-asset" data-id="${a.id}">${ic('print')} History PDF</button>
     </div>
@@ -992,6 +1006,8 @@ function vAsset(id) {
       <section class="card"><div class="row" style="margin-bottom:10px"><h2 style="margin:0">Service</h2><span class="spacer"></span><button class="btn sm" data-act="sched-new" data-aid="${a.id}">${ic('plus')} Add</button></div>
         ${dues.length ? `<ul class="list">${dues.map(d => `<li><div style="flex:1;min-width:150px"><div>${h(d.s.task)}</div><div class="muted small">${d.s.asset_id ? 'This item' : 'All ' + h(d.s.model)} · ${dueText(d)}</div></div>${duePill(d)}<button class="btn sm" data-act="done" data-sid="${d.s.id}" data-aid="${a.id}">Done</button></li>`).join('')}</ul>` : '<p class="empty">No service schedule.</p>'}
       </section>
+      ${repairCard(a)}
+      ${costCard(a)}
       ${partsFittedCard(a)}
       <section class="card"><div class="row" style="margin-bottom:10px"><h2 style="margin:0">Manuals</h2><span class="spacer"></span><button class="btn sm" data-act="manual-new" data-make="${h(a.make)}" data-model="${h(a.model)}">${ic('plus')} Add</button></div>
         ${mans.length ? `<ul class="list">${mans.map(manualItem).join('')}</ul>` : `<p class="empty">No manuals for ${h(a.model || 'this model')}.</p>`}
@@ -1056,6 +1072,15 @@ function vManuals() {
 }
 
 /* ---------- reports ---------- */
+function costSection() {
+  const models = uniq(S.assets.map(a => a.model));
+  return `<section class="card" style="margin-top:16px"><div class="row" style="margin-bottom:10px"><h2 style="margin:0">Repair cost by light</h2><span class="spacer"></span>
+      <select data-cost-model style="width:auto;min-width:160px"><option value="">All models</option>${models.map(m => `<option ${costModel === m ? 'selected' : ''}>${h(m)}</option>`).join('')}</select>
+      <button class="btn sm" data-act="export" data-what="costs">${ic('download')} CSV</button></div>
+    <p class="muted small" style="margin-bottom:10px">Parts checked out to each light (at the price when taken) plus repairer bills. <b>Problem unit</b> = ${PROBLEM_FAULTS}+ faults in 12 months.</p>
+    <div id="cost-list">${costTable()}</div></section>
+  <section class="card"><h2>Repair cost by model</h2>${modelCostTable()}</section>`;
+}
 function vReports() {
   const since = d => S.logs.filter(l => daysSince(l.created_at) <= d);
   const count = (arr, k) => arr.filter(l => l.kind === k).length;
@@ -1075,8 +1100,10 @@ function vReports() {
     <section class="card"><h2>Faults</h2><p class="muted small" style="margin-bottom:14px">Everything currently faulty, in repair or out of service, with how long and the latest note.</p>
       <div class="row"><button class="btn" data-act="print-faults">${ic('print')} Fault report (PDF)</button><button class="btn" data-act="export" data-what="faults">${ic('download')} CSV</button></div></section>
     <section class="card"><h2>Inventory</h2><p class="muted small" style="margin-bottom:14px">Every item with status, hours and location.</p><button class="btn" data-act="export" data-what="inventory">${ic('download')} Download CSV</button></section>
+    <section class="card"><h2>Repairs sent away</h2><p class="muted small" style="margin-bottom:14px">Every job sent to ShowTech or others: dates, outcome and cost.</p><div class="row"><a class="btn" href="#/repairs">${ic('truck')} Away for repair</a><button class="btn" data-act="export" data-what="repairs">${ic('download')} CSV</button></div></section>
     <section class="card"><h2>Service due</h2><p class="muted small" style="margin-bottom:14px">All scheduled tasks with due dates and hours left.</p><button class="btn" data-act="export" data-what="due">${ic('download')} Download CSV</button></section>
-  </div>`;
+  </div>
+  ${costSection()}`;
 }
 
 /* ---------- team ---------- */
@@ -1140,7 +1167,7 @@ function vParts() {
   const outs = S.part_moves.filter(m => m.kind === 'checkout').sort(byNewest).slice(0, 15);
   const makes = uniq(S.parts.map(pt => pt.make));
   return `<header class="page-h"><div><h1>Spare parts</h1><p class="muted">Stock, prices and who took what for which fixture.</p></div>
-    <div class="row"><button class="btn" data-act="export" data-what="parts">${ic('download')} CSV</button><button class="btn" data-act="part-new">${ic('plus')} Add part</button><button class="btn primary" data-act="checkout">${ic('parts')} Check out</button></div></header>
+    <div class="row"><button class="btn" data-act="export" data-what="parts">${ic('download')} CSV</button><button class="btn" data-act="part-new">${ic('plus')} Add part</button><button class="btn" data-act="order-list">${ic('file')} Order list</button><button class="btn primary" data-act="checkout">${ic('parts')} Check out</button></div></header>
   ${partsMissingNote()}
   <div class="stats">
     <div class="stat"><span class="muted small">Parts listed</span><b>${S.parts.length}</b></div>
@@ -1208,7 +1235,7 @@ async function submitCheckout(f) {
   const a = findAsset(fd.get('tag')); if (!a) throw new Error('No fixture with that tag or serial — check it and try again.');
   const person = fd.get('person').trim(); if (!person) throw new Error('Who is taking it?');
   const prof = S.profiles.find(x => norm(x.name) === norm(person));
-  const m = await api.insert('part_moves', { part_id: pt.id, change: -qty, kind: 'checkout', person_name: person, person_id: prof?.id || null, asset_id: a.id, notes: fd.get('notes').trim(), created_by: S.user.id });
+  const m = await api.insert('part_moves', { part_id: pt.id, change: -qty, kind: 'checkout', unit_price: pt.unit_price ?? null, person_name: person, person_id: prof?.id || null, asset_id: a.id, notes: fd.get('notes').trim(), created_by: S.user.id });
   S.part_moves.unshift(m); pt.quantity -= qty;
   toast(`${qty} × ${pt.name} checked out to ${person} for ${a.tag}`); closeModal(); render();
 }
@@ -1232,7 +1259,7 @@ async function returnPart(id) {
   const m = S.part_moves.find(x => x.id === id); const pt = m && partById(m.part_id); if (!pt) return;
   if (!confirm(`Return ${-m.change} × ${pt.name} to stock (came back unused)?`)) return;
   try {
-    const r = await api.insert('part_moves', { part_id: pt.id, change: -m.change, kind: 'return', person_name: m.person_name, asset_id: m.asset_id, notes: 'Return of ' + m.id, created_by: S.user.id });
+    const r = await api.insert('part_moves', { part_id: pt.id, change: -m.change, kind: 'return', unit_price: m.unit_price ?? null, person_name: m.person_name, asset_id: m.asset_id, notes: 'Return of ' + m.id, created_by: S.user.id });
     S.part_moves.unshift(r); pt.quantity += -m.change; toast('Returned to stock'); render();
   } catch (e) { toast(errMsg(e), 'bad'); }
 }
@@ -1276,6 +1303,224 @@ async function submitPart(f) {
   }
   toast(id ? 'Saved' : 'Part added'); closeModal(); location.hash = '#/part/' + pt.id; render();
 }
+
+/* ---------- repairs sent away (ShowTech etc.) ---------- */
+const REPAIR_OVERDUE_DAYS = CFG.REPAIR_OVERDUE_DAYS || 30;   // flag when no expected-back date and away longer than this
+const jobsFor = id => idx().jobs.get(id) || [];
+const openJob = id => jobsFor(id).find(j => !j.returned_at);
+const openJobs = () => S.repair_jobs.filter(j => !j.returned_at && assetById(j.asset_id));
+const isoDay = (d = new Date()) => new Date(d.getTime() - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
+const daysAway = j => Math.max(0, Math.floor((Date.now() - new Date(j.sent_at + 'T00:00:00')) / DAY));
+function jobOverdue(j) {
+  if (j.returned_at) return false;
+  if (j.expected_back) return isoDay() > j.expected_back;
+  return daysAway(j) > REPAIR_OVERDUE_DAYS;
+}
+const fmtDay = d => d ? fmtDate(d + 'T12:00:00') : '—';
+function apill(a) {
+  const j = S.repairsMissing ? null : openJob(a.id);
+  return j ? `<span class="pill s-away" title="${h(a.status)}">At ${h(j.repairer)}${jobOverdue(j) ? ' · overdue' : ''}</span>` : pill(a.status);
+}
+const repairers = () => uniq(['ShowTech', ...S.repair_jobs.map(j => j.repairer)]);
+function repairsMissingNote() {
+  return S.repairsMissing ? `<div class="alert warn"><div class="alert-h">${ic('alert')} Repair tracking isn't set up in the database yet</div><p class="small">Ask Claude to apply the repair-tracking update, then tap Refresh.</p></div>` : '';
+}
+function sendModal(aid) {
+  if (S.repairsMissing) return toast('Repair tracking isn\'t set up in the database yet', 'bad');
+  const a = assetById(aid); if (!a) return;
+  const lastFault = logsFor(a.id).find(l => l.kind === 'Fault');
+  const back = new Date(Date.now() + 21 * DAY);
+  openModal(`Send for repair — ${a.tag}`, `<form data-form="send-repair"><input type="hidden" name="asset_id" value="${a.id}">
+    <datalist id="dl-repairers">${repairers().map(r => `<option value="${h(r)}">`).join('')}</datalist>
+    <div class="fgrid">
+      <div class="field"><label>Sent to</label><input name="repairer" list="dl-repairers" required value="ShowTech" autocomplete="off"></div>
+      <div class="field"><label>Their job / RMA number</label><input name="job_no" class="mono" placeholder="If you have one"></div>
+      <div class="field full"><label>Fault</label><input name="fault" required value="${h(lastFault?.title || '')}" placeholder="What's wrong with it"></div>
+      <div class="field"><label>Date sent</label><input name="sent_at" type="date" required value="${isoDay()}"></div>
+      <div class="field"><label>Expected back</label><input name="expected_back" type="date" value="${isoDay(back)}"></div>
+      <div class="field full"><label>Notes (optional)</label><input name="notes" placeholder="e.g. Sent with case, quote requested"></div>
+    </div>
+    <p class="muted small" style="margin-bottom:12px">It shows as "At ShowTech" (or wherever it went) until you mark it back, and gets flagged if it's not back by the expected date.</p>
+    <div class="modal-f"><button type="button" class="btn" data-act="modal-close">Cancel</button><button class="btn primary">Send for repair</button></div></form>`);
+}
+async function submitSend(f) {
+  const fd = new FormData(f); const a = assetById(fd.get('asset_id'));
+  if (openJob(a.id)) throw new Error('This light is already away for repair.');
+  const repairer = fd.get('repairer').trim(), job_no = fd.get('job_no').trim(), fault = fd.get('fault').trim();
+  if (!repairer || !fault) throw new Error('Fill in where it went and the fault.');
+  const job = await api.insert('repair_jobs', { asset_id: a.id, repairer, job_no: job_no || null, fault, sent_at: fd.get('sent_at'), expected_back: fd.get('expected_back') || null, notes: fd.get('notes').trim() || null, created_by: S.user.id });
+  S.repair_jobs.unshift(job);
+  const patch = { location: repairer, updated_at: new Date().toISOString(), updated_by: S.user.id };
+  if (!BAD.includes(a.status)) Object.assign(patch, statusPatch(a, 'In repair'));
+  else if (a.status === 'Faulty') patch.status = 'In repair';
+  Object.assign(a, await api.update('assets', a.id, patch));
+  S.logs.unshift(await api.insert('logs', { asset_id: a.id, kind: 'Note', title: `Sent to ${repairer}${job_no ? ' (job ' + job_no + ')' : ''}`, details: fault + (job.expected_back ? `\nExpected back ${fmtDay(job.expected_back)}` : ''), location: repairer, photos: [], status_after: a.status, created_by: S.user.id }));
+  toast(`${a.tag} sent to ${repairer}`); closeModal(); render();
+}
+function returnModal(jid) {
+  const j = S.repair_jobs.find(x => x.id === jid); const a = j && assetById(j.asset_id); if (!a) return;
+  openModal(`Back from ${j.repairer} — ${a.tag}`, `<form data-form="return-repair">${datalists()}<input type="hidden" name="id" value="${j.id}">
+    <div class="note">${h(j.fault || '')}${j.job_no ? ` · job <span class="mono">${h(j.job_no)}</span>` : ''} · sent ${fmtDay(j.sent_at)} (${daysAway(j)} days ago)</div>
+    <div class="fgrid">
+      <div class="field"><label>Date back</label><input name="returned_at" type="date" required value="${isoDay()}"></div>
+      <div class="field"><label>Outcome</label><select name="outcome" required><option>Fixed</option><option>Still faulty</option><option>Written off</option></select></div>
+      <div class="field"><label>Repair cost ($, ex GST)</label><input name="cost" type="number" min="0" step="0.01" inputmode="decimal" placeholder="From the invoice"></div>
+      <div class="field"><label>Where is it now?</label><input name="location" list="dl-loc" required placeholder="e.g. Rack 3, Repair bench" autocomplete="off"></div>
+      <div class="field full"><label>What they did</label><input name="notes" required placeholder="e.g. Replaced main PCB, firmware updated"></div>
+    </div>
+    <div class="modal-f"><button type="button" class="btn" data-act="modal-close">Cancel</button><button class="btn primary">Mark returned</button></div></form>`);
+}
+async function submitReturn(f) {
+  const fd = new FormData(f); const j = S.repair_jobs.find(x => x.id === fd.get('id')); const a = assetById(j.asset_id);
+  const outcome = fd.get('outcome'), cost = numOrNull(fd.get('cost')), notes = fd.get('notes').trim(), location = fd.get('location').trim();
+  if (!notes || !location) throw new Error('Fill in what they did and where it is now.');
+  Object.assign(j, await api.update('repair_jobs', j.id, { returned_at: fd.get('returned_at'), outcome, cost, notes: [j.notes, notes].filter(Boolean).join('\n') }));
+  const st = outcome === 'Fixed' ? 'OK' : outcome === 'Written off' ? 'Retired' : 'Faulty';
+  Object.assign(a, await api.update('assets', a.id, { ...statusPatch(a, st), location, updated_at: new Date().toISOString(), updated_by: S.user.id }));
+  S.logs.unshift(await api.insert('logs', { asset_id: a.id, kind: outcome === 'Fixed' ? 'Repair' : outcome === 'Still faulty' ? 'Fault' : 'Note',
+    title: `Back from ${j.repairer}: ${outcome.toLowerCase()}`, details: notes + (j.job_no ? `\nJob ${j.job_no}` : '') + (cost != null ? `\nRepair cost ${money(cost)}` : ''),
+    location, photos: [], status_after: st, created_by: S.user.id }));
+  toast(`${a.tag} marked returned`); closeModal(); render();
+}
+function awayRows(list, done) {
+  return `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Light</th><th>Sent to</th><th class="hide-m">Fault</th><th>${done ? 'Back' : 'Away'}</th><th class="hide-m">${done ? 'Outcome' : 'Expected back'}</th>${done ? '<th class="hide-m">Cost</th>' : ''}<th></th></tr></thead><tbody>
+  ${list.map(j => { const a = assetById(j.asset_id); return `<tr><td><a href="#/asset/${a.id}" class="tag" style="text-decoration:none">${h(a.tag)}</a><div class="muted small">${h(a.model)}</div></td>
+    <td>${h(j.repairer)}${j.job_no ? `<div class="muted small mono">${h(j.job_no)}</div>` : ''}</td><td class="hide-m small">${h(j.fault || '')}</td>
+    ${done ? `<td class="small">${fmtDay(j.returned_at)}</td><td class="hide-m small">${h(j.outcome || '')}</td><td class="hide-m">${money(j.cost)}</td><td></td>`
+      : `<td><b>${daysAway(j)} d</b>${jobOverdue(j) ? ' <span class="pill d-overdue">Overdue</span>' : ''}<div class="muted small">since ${fmtDay(j.sent_at)}</div></td><td class="hide-m small">${fmtDay(j.expected_back)}</td>
+         <td style="text-align:right"><button class="btn sm" data-act="repair-return" data-id="${j.id}">${ic('check')} Back</button></td>`}</tr>`; }).join('')}
+  </tbody></table></div>`;
+}
+function vRepairs() {
+  const open = openJobs().sort((x, y) => (jobOverdue(y) - jobOverdue(x)) || x.sent_at.localeCompare(y.sent_at));
+  const back = S.repair_jobs.filter(j => j.returned_at && assetById(j.asset_id) && daysSince(j.returned_at + 'T12:00:00') <= 180).sort((x, y) => y.returned_at.localeCompare(x.returned_at));
+  const over = open.filter(jobOverdue).length, spent = back.reduce((n, j) => n + (Number(j.cost) || 0), 0);
+  return `<header class="page-h"><div><h1>Away for repair</h1><p class="muted">Lights at ShowTech or other repairers. Send one from its page with <b>Send for repair</b>.</p></div>
+    <button class="btn" data-act="export" data-what="repairs">${ic('download')} CSV</button></header>
+  ${repairsMissingNote()}
+  <div class="stats">
+    <div class="stat"><span class="muted small">Away now</span><b>${open.length}</b></div>
+    <div class="stat ${over ? 'bad' : ''}"><span class="muted small">Overdue back</span><b>${over}</b></div>
+    <div class="stat"><span class="muted small">Back · last 6 months</span><b>${back.length}</b></div>
+    <div class="stat"><span class="muted small">Repair bills · 6 months</span><b>${money(spent)}</b></div>
+  </div>
+  <section class="card"><h2>Away now</h2>${open.length ? awayRows(open, false) : '<p class="empty">Nothing away for repair.</p>'}</section>
+  <section class="card"><h2>Back in the last 6 months</h2>${back.length ? awayRows(back, true) : '<p class="empty">Nothing returned yet.</p>'}</section>`;
+}
+function awayCard() {
+  const open = openJobs(); if (!open.length) return '';
+  const over = open.filter(jobOverdue);
+  const list = [...open].sort((x, y) => (jobOverdue(y) - jobOverdue(x)) || x.sent_at.localeCompare(y.sent_at)).slice(0, 6);
+  return `<section class="card"><div class="row" style="margin-bottom:10px"><h2 style="margin:0">Away for repair (${open.length})</h2>${over.length ? `<span class="pill d-overdue">${over.length} overdue</span>` : ''}<span class="spacer"></span><a href="#/repairs" class="small muted">See all →</a></div>
+    <ul class="list">${list.map(j => { const a = assetById(j.asset_id); return `<li><a href="#/asset/${a.id}" class="tag">${h(a.tag)}</a><span>${h(j.repairer)}</span><span class="spacer"></span><b class="small">${daysAway(j)} d</b>${jobOverdue(j) ? '<span class="pill d-overdue">Overdue</span>' : ''}<div class="muted small" style="width:100%">${h(j.fault || '')}${j.job_no ? ' · job ' + h(j.job_no) : ''}</div></li>`; }).join('')}</ul></section>`;
+}
+function repairCard(a) {
+  if (S.repairsMissing) return '';
+  const js = jobsFor(a.id);
+  if (!js.length) return '';
+  return `<section class="card"><h2>Repairs sent away (${js.length})</h2><ul class="list">${js.map(j => `<li><div style="flex:1;min-width:150px"><div>${h(j.repairer)}${j.job_no ? ` · <span class="mono small">${h(j.job_no)}</span>` : ''}</div>
+    <div class="muted small">${fmtDay(j.sent_at)} → ${j.returned_at ? fmtDay(j.returned_at) + ' · ' + h(j.outcome || '') : 'still away (' + daysAway(j) + ' d)'}${j.cost != null ? ' · ' + money(j.cost) : ''}</div></div>
+    ${j.returned_at ? '' : `<button class="btn sm" data-act="repair-return" data-id="${j.id}">Back</button>`}</li>`).join('')}</ul></section>`;
+}
+
+/* ---------- repair cost per light ---------- */
+function costOf(a) {
+  let parts = 0, partsQty = 0, unpriced = 0;
+  for (const m of movesFor(a.id)) {
+    if (m.kind !== 'checkout' && m.kind !== 'return') continue;
+    const price = hasH(m.unit_price) ? Number(m.unit_price) : hasH(partById(m.part_id)?.unit_price) ? Number(partById(m.part_id).unit_price) : null;
+    const qty = -m.change;
+    partsQty += qty;
+    if (price == null) { if (m.kind === 'checkout') unpriced += qty; continue; }
+    parts += qty * price;
+  }
+  const js = jobsFor(a.id), repairs = js.reduce((n, j) => n + (Number(j.cost) || 0), 0);
+  const ls = logsFor(a.id), faults = ls.filter(l => l.kind === 'Fault').length;
+  const faults12 = ls.filter(l => l.kind === 'Fault' && daysSince(l.created_at) <= 365).length;
+  return { parts, partsQty, unpriced, repairs, jobs: js.length, total: parts + repairs, faults, faults12 };
+}
+const PROBLEM_FAULTS = 3;   // faults in 12 months that flag a "problem unit"
+function costCard(a) {
+  const c = costOf(a);
+  if (!c.faults && !c.partsQty && !c.jobs) return '';
+  return `<section class="card"><h2>Repair cost</h2><div class="kv" style="grid-template-columns:1fr 1fr">
+    <div><span>Parts fitted</span><b>${money(c.parts)}</b><div class="muted small">${c.partsQty} part${c.partsQty === 1 ? '' : 's'}${c.unpriced ? ` · ${c.unpriced} with no price` : ''}</div></div>
+    <div><span>Repairer bills</span><b>${money(c.repairs)}</b><div class="muted small">${c.jobs} job${c.jobs === 1 ? '' : 's'}</div></div>
+    <div><span>Total spent</span><b>${money(c.total)}</b></div>
+    <div><span>Faults logged</span><b>${c.faults}</b><div class="muted small">${c.faults12} in the last 12 months${c.faults12 >= PROBLEM_FAULTS ? ' · <span style="color:var(--bad)">problem unit</span>' : ''}</div></div>
+  </div></section>`;
+}
+let costModel = '';
+function costRows() {
+  return S.assets.filter(a => !costModel || a.model === costModel).map(a => ({ a, ...costOf(a) }))
+    .filter(r => r.total || r.faults).sort((x, y) => y.total - x.total || y.faults12 - x.faults12 || y.faults - x.faults);
+}
+function costTable() {
+  const rows = costRows().slice(0, 20);
+  if (!rows.length) return '<p class="empty">No repair costs or faults yet.</p>';
+  return `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Light</th><th>Total</th><th class="hide-m">Parts</th><th class="hide-m">Repairer</th><th>Faults</th></tr></thead><tbody>
+  ${rows.map(r => `<tr class="click" data-act="go" data-href="#/asset/${r.a.id}"><td><span class="tag">${h(r.a.tag)}</span><div class="muted small">${h(r.a.model)}</div></td><td><b>${money(r.total)}</b></td>
+    <td class="hide-m">${money(r.parts)}${r.unpriced ? ` <span class="muted small">(+${r.unpriced} unpriced)</span>` : ''}</td><td class="hide-m">${money(r.repairs)}</td>
+    <td>${r.faults}${r.faults12 >= PROBLEM_FAULTS ? ` <span class="pill d-overdue" title="${r.faults12} faults in 12 months">Problem unit</span>` : ''}<div class="muted small">${r.faults12} in 12 mo</div></td></tr>`).join('')}
+  </tbody></table></div>`;
+}
+function modelCostTable() {
+  const by = new Map();
+  for (const a of S.assets) {
+    if (a.category === 'Other') continue;
+    const c = costOf(a), k = a.model || '—';
+    const m = by.get(k) || { model: k, units: 0, total: 0, faults12: 0, problems: 0 };
+    m.units++; m.total += c.total; m.faults12 += c.faults12; if (c.faults12 >= PROBLEM_FAULTS) m.problems++;
+    by.set(k, m);
+  }
+  const rows = [...by.values()].filter(m => m.total || m.faults12).sort((x, y) => y.total - x.total || y.faults12 - x.faults12);
+  if (!rows.length) return '<p class="empty">Nothing yet.</p>';
+  return `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Model</th><th>Units</th><th>Spent</th><th class="hide-m">Per unit</th><th>Faults · 12 mo</th></tr></thead><tbody>
+  ${rows.map(m => `<tr><td>${h(m.model)}</td><td>${m.units}</td><td>${money(m.total)}</td><td class="hide-m">${money(m.total / m.units)}</td><td>${m.faults12}${m.problems ? ` <span class="muted small">· ${m.problems} problem unit${m.problems > 1 ? 's' : ''}</span>` : ''}</td></tr>`).join('')}
+  </tbody></table></div>`;
+}
+
+/* ---------- parts order list ---------- */
+let order = null;   // { rows: [{ pid, qty, on }] }
+function suggestQty(pt) {
+  if (pt.min_qty > 0) return Math.max(1, pt.min_qty * 2 - pt.quantity);
+  return pt.quantity === 0 ? 1 : 0;
+}
+function orderModal() {
+  if (S.partsMissing) return toast('Run rigready-parts.sql in Supabase first', 'bad');
+  order = { rows: S.parts.filter(isLow).sort((a, b) => String(a.make || '').localeCompare(String(b.make || '')) || a.name.localeCompare(b.name)).map(pt => ({ pid: pt.id, qty: suggestQty(pt), on: true })) };
+  openModal('Parts order list', '<div id="order-body"></div>');
+  $('.modal-box').style.maxWidth = '760px';
+  drawOrder();
+}
+function orderLines() { return order.rows.filter(r => r.on && r.qty > 0).map(r => ({ ...r, pt: partById(r.pid) })).filter(r => r.pt); }
+function drawOrder() {
+  const lines = orderLines(), total = lines.reduce((n, r) => n + (hasH(r.pt.unit_price) ? r.qty * r.pt.unit_price : 0), 0);
+  const unpriced = lines.filter(r => !hasH(r.pt.unit_price)).length;
+  const others = S.parts.filter(pt => !order.rows.some(r => r.pid === pt.id)).sort((a, b) => a.name.localeCompare(b.name));
+  $('#order-body').innerHTML = `<p class="muted small" style="margin-bottom:10px">Everything low or out of stock, with a suggested quantity (back up to twice its low-stock level). Change quantities, untick lines, or add other parts.</p>
+    ${order.rows.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th></th><th>Part</th><th class="hide-m">Code</th><th>Have</th><th style="width:90px">Order</th><th class="hide-m">Line</th></tr></thead><tbody>
+    ${order.rows.map((r, i) => { const pt = partById(r.pid); if (!pt) return ''; return `<tr><td><input type="checkbox" data-order-on="${i}" ${r.on ? 'checked' : ''} style="width:auto;min-height:0"></td>
+      <td>${h(pt.name)}<div class="muted small">${h(pt.make || '')}</div></td><td class="hide-m mono small">${h(pt.supplier_code || pt.part_number || '—')}</td><td>${qtyPill(pt)}</td>
+      <td><input type="number" min="0" step="1" value="${r.qty}" data-order-qty="${i}" inputmode="numeric" style="padding:6px 8px;min-height:32px"></td>
+      <td class="hide-m small">${hasH(pt.unit_price) ? money(r.qty * pt.unit_price) : '—'}</td></tr>`; }).join('')}
+    </tbody></table></div>` : '<p class="empty">Nothing is low or out of stock.</p>'}
+    <div class="row" style="margin:12px 0"><select data-order-add style="flex:1;min-width:200px"><option value="">+ Add another part…</option>${others.map(pt => `<option value="${pt.id}">${h(pt.make ? pt.make + ' — ' : '')}${h(pt.name)}</option>`).join('')}</select></div>
+    <div class="note" style="margin-bottom:12px"><b>${lines.length} line${lines.length === 1 ? '' : 's'}</b> · ${lines.reduce((n, r) => n + r.qty, 0)} items · estimated <b>${money(total)}</b>${unpriced ? ` + ${unpriced} line${unpriced > 1 ? 's' : ''} with no price` : ''}</div>
+    <div class="modal-f" style="flex-wrap:wrap"><button type="button" class="btn" data-act="order-copy" ${lines.length ? '' : 'disabled'}>Copy</button><button type="button" class="btn" data-act="order-csv" ${lines.length ? '' : 'disabled'}>${ic('download')} CSV</button>
+      <button type="button" class="btn" data-act="order-print" ${lines.length ? '' : 'disabled'}>${ic('print')} Print</button><button type="button" class="btn primary" data-act="order-email" ${lines.length ? '' : 'disabled'}>Email order</button></div>`;
+}
+function orderText() {
+  const lines = orderLines();
+  const body = lines.map(r => `${r.qty} x ${r.pt.name}${r.pt.supplier_code ? ' — code ' + r.pt.supplier_code : ''}${r.pt.part_number ? ' — part no. ' + r.pt.part_number : ''}`).join('\n');
+  return `Hi,\n\nPlease supply the following parts:\n\n${body}\n\nThanks,\n${S.profile?.name || ''}`;
+}
+const ORDER = {
+  'order-copy': async () => { try { await navigator.clipboard.writeText(orderText()); toast('Order copied — paste it into an email'); } catch { toast('Couldn\'t copy on this device — use Email or CSV', 'warn'); } },
+  'order-email': () => { location.href = `mailto:${encodeURIComponent(CFG.ORDER_EMAIL || '')}?subject=${encodeURIComponent('Parts order ' + fmtDate(new Date()))}&body=${encodeURIComponent(orderText())}`; },
+  'order-csv': () => downloadText(`parts-order-${stamp()}.csv`, toCSV(orderLines(), [['Qty', r => r.qty], ['Part', r => r.pt.name], ['Make', r => r.pt.make], ['Supplier code', r => r.pt.supplier_code], ['Part number', r => r.pt.part_number], ['In stock', r => r.pt.quantity], ['Price each', r => r.pt.unit_price ?? ''], ['Line total', r => hasH(r.pt.unit_price) ? (r.qty * r.pt.unit_price).toFixed(2) : '']])),
+  'order-print': () => { const lines = orderLines(); printDoc(`<h1>Parts order</h1><div class="sub">${fmtDate(new Date())} · ${h(S.profile?.name || '')}</div><table><thead><tr><th>Qty</th><th>Part</th><th>Code</th><th>Part no.</th><th>Price each</th><th>Line</th></tr></thead><tbody>${lines.map(r => `<tr><td>${r.qty}</td><td>${h(r.pt.name)}</td><td>${h(r.pt.supplier_code || '')}</td><td>${h(r.pt.part_number || '')}</td><td>${money(r.pt.unit_price)}</td><td>${hasH(r.pt.unit_price) ? money(r.qty * r.pt.unit_price) : ''}</td></tr>`).join('')}</tbody></table>`); },
+};
 
 /* ============================================================
    MODALS & FORMS
@@ -1455,6 +1700,13 @@ function exportCSV(what, opts = {}) {
   if (what === 'due') downloadText(`service-due-${stamp()}.csv`, toCSV(dueList(), [
     ['Asset tag', d => d.a.tag], ['Model', d => d.a.model], ['Task', d => d.s.task], ['Status', d => d.state], ['Due date', d => d.dueDate ? fmtDate(d.dueDate) : ''],
     ['Days left', d => d.daysLeft ?? ''], ['Hours left', d => d.hoursLeft ?? ''], ['Last done', d => d.last ? fmtDate(d.last.created_at) : 'Never']]));
+  if (what === 'repairs') downloadText(`repairs-${stamp()}.csv`, toCSV([...S.repair_jobs].filter(j => assetById(j.asset_id)).sort((x, y) => String(y.sent_at).localeCompare(String(x.sent_at))), [
+    ['Light', j => tagOf(j.asset_id)], ['Model', j => assetById(j.asset_id)?.model || ''], ['Sent to', j => j.repairer], ['Job no.', j => j.job_no || ''], ['Fault', j => j.fault || ''],
+    ['Sent', j => j.sent_at], ['Expected back', j => j.expected_back || ''], ['Back', j => j.returned_at || ''], ['Days away', j => j.returned_at ? Math.round((new Date(j.returned_at) - new Date(j.sent_at)) / DAY) : daysAway(j)],
+    ['Overdue', j => jobOverdue(j) ? 'YES' : ''], ['Outcome', j => j.outcome || ''], ['Cost', j => j.cost ?? ''], ['Notes', j => j.notes || '']]));
+  if (what === 'costs') downloadText(`repair-costs-${stamp()}.csv`, toCSV(costRows(), [
+    ['Light', r => r.a.tag], ['Model', r => r.a.model], ['Total spent', r => r.total.toFixed(2)], ['Parts', r => r.parts.toFixed(2)], ['Parts fitted', r => r.partsQty], ['Unpriced parts', r => r.unpriced],
+    ['Repairer bills', r => r.repairs.toFixed(2)], ['Repair jobs', r => r.jobs], ['Faults (all time)', r => r.faults], ['Faults (12 months)', r => r.faults12], ['Problem unit', r => r.faults12 >= PROBLEM_FAULTS ? 'YES' : ''], ['Status', r => r.a.status]]));
   if (what === 'parts') downloadText(`spare-parts-${stamp()}.csv`, toCSV(filteredParts(), [
     ['Part', p => p.name], ['Make', p => p.make], ['Fits', p => p.fits], ['Supplier code', p => p.supplier_code], ['Part number', p => p.part_number],
     ['In stock', p => p.quantity], ['Low-stock alert at', p => p.min_qty || ''], ['Price each', p => p.unit_price ?? ''], ['Stock value', p => hasH(p.unit_price) ? (p.quantity * p.unit_price).toFixed(2) : ''],
@@ -1534,6 +1786,10 @@ const ACT = {
   'checkout': d => checkoutModal(d),
   'restock': d => restockModal(S.parts.find(x => x.id === d.id)),
   'part-return': d => returnPart(d.id),
+  'repair-send': d => sendModal(d.id),
+  'repair-return': d => returnModal(d.id),
+  'order-list': () => orderModal(),
+  ...ORDER,
   'move-del': d => undoMove(d.id),
 };
 document.addEventListener('click', e => {
@@ -1589,7 +1845,7 @@ const FORMS = {
   },
   async newpw(f) { await api.setPw(new FormData(f).get('password')); S.recovery = false; toast('Password updated'); history.replaceState(null, '', location.pathname + '#/dashboard'); await boot(); },
   async lookup(f) { lookup(new FormData(f).get('code')); f.reset(); },
-  'link-code': linkCode, part: submitPart, checkout: submitCheckout, restock: submitRestock, asset: submitAsset, log: submitLog, sched: submitSched, manual: submitManual,
+  'send-repair': submitSend, 'return-repair': submitReturn, 'link-code': linkCode, part: submitPart, checkout: submitCheckout, restock: submitRestock, asset: submitAsset, log: submitLog, sched: submitSched, manual: submitManual,
   async 'export-logs'(f) { const fd = new FormData(f); exportCSV('logs', { from: fd.get('from'), to: fd.get('to') }); },
 };
 document.addEventListener('submit', async e => {
@@ -1611,6 +1867,10 @@ document.addEventListener('input', e => {
 document.addEventListener('change', async e => {
   const t = e.target;
   if (t.dataset.photoScan !== undefined) return scanPhoto(t);
+  if (t.dataset.costModel !== undefined) { costModel = t.value; $('#cost-list').innerHTML = costTable(); return; }
+  if (t.dataset.orderOn !== undefined) { order.rows[+t.dataset.orderOn].on = t.checked; drawOrder(); return; }
+  if (t.dataset.orderQty !== undefined) { order.rows[+t.dataset.orderQty].qty = Math.max(0, parseInt(t.value || '0', 10) || 0); drawOrder(); return; }
+  if (t.dataset.orderAdd !== undefined) { if (t.value) { order.rows.push({ pid: t.value, qty: 1, on: true }); drawOrder(); } return; }
   if (t.dataset.afterScan !== undefined) { S.afterScan = t.value; try { localStorage.setItem('rr-after-scan', t.value); } catch {} toast('Saved for this device'); return; }
   if (t.dataset.filter === 'partMake') { S.partMake = t.value; $('#part-list').innerHTML = partTable(); return; }
   if (t.dataset.filter && t.tagName === 'SELECT') { S.filter[t.dataset.filter] = t.value; $('#asset-list').innerHTML = assetTable(); return; }

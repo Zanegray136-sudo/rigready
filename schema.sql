@@ -254,3 +254,36 @@ drop policy if exists "moves: delete" on public.part_moves;
 create policy "moves: read"   on public.part_moves for select to authenticated using (public.is_member());
 create policy "moves: add"    on public.part_moves for insert to authenticated with check (public.is_member() and created_by = auth.uid());
 create policy "moves: delete" on public.part_moves for delete to authenticated using (public.is_admin());
+
+-- Repairs sent out (ShowTech etc.)
+create table if not exists public.repair_jobs (
+  id             uuid primary key default gen_random_uuid(),
+  asset_id       uuid not null references public.assets(id) on delete cascade,
+  repairer       text not null default 'ShowTech',
+  job_no         text,
+  fault          text,
+  sent_at        date not null default current_date,
+  expected_back  date,
+  returned_at    date,
+  outcome        text check (outcome in ('Fixed','Still faulty','Written off')),
+  cost           numeric check (cost >= 0),
+  notes          text,
+  created_by     uuid references public.profiles(id) on delete set null default auth.uid(),
+  created_at     timestamptz not null default now()
+);
+create index if not exists repair_jobs_asset_idx   on public.repair_jobs (asset_id, sent_at desc);
+create index if not exists repair_jobs_open_idx    on public.repair_jobs (sent_at) where returned_at is null;
+create index if not exists repair_jobs_created_idx on public.repair_jobs (created_by);
+
+grant select, insert, update, delete on public.repair_jobs to authenticated;
+alter table public.repair_jobs enable row level security;
+drop policy if exists "repairs: read"   on public.repair_jobs;
+drop policy if exists "repairs: add"    on public.repair_jobs;
+drop policy if exists "repairs: edit"   on public.repair_jobs;
+drop policy if exists "repairs: delete" on public.repair_jobs;
+create policy "repairs: read"   on public.repair_jobs for select to authenticated using ((select public.is_member()));
+create policy "repairs: add"    on public.repair_jobs for insert to authenticated with check ((select public.is_member()));
+create policy "repairs: edit"   on public.repair_jobs for update to authenticated using ((select public.is_member()));
+create policy "repairs: delete" on public.repair_jobs for delete to authenticated using ((select public.is_admin()));
+
+alter table public.part_moves add column if not exists unit_price numeric;
