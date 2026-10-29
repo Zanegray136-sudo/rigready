@@ -211,7 +211,7 @@ label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px;font-wei
 }
 </style>
 <script src="config.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4"></script>
 <script src="jsqr.js"></script><!-- jsQR, Apache-2.0, github.com/cozmo/jsQR -->
 </head>
 <body>
@@ -239,8 +239,13 @@ const $ = (s, el=document) => el.querySelector(s);
 const h = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const norm = s => String(s ?? '').trim().toLowerCase();
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
-const fmtDate = d => d ? new Date(d).toLocaleDateString(undefined, {day:'numeric', month:'short', year:'numeric'}) : '—';
-const fmtDT = d => d ? new Date(d).toLocaleString(undefined, {day:'numeric', month:'short', year:'numeric', hour:'numeric', minute:'2-digit'}) : '—';
+/* formatters are built once and reused (building one per date is slow on phones) */
+const F_DATE = new Intl.DateTimeFormat(undefined, {day:'numeric', month:'short', year:'numeric'});
+const F_DT = new Intl.DateTimeFormat(undefined, {day:'numeric', month:'short', year:'numeric', hour:'numeric', minute:'2-digit'});
+const F_NUM = new Intl.NumberFormat();
+const F_SORT = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+const fmtDate = d => d ? F_DATE.format(new Date(d)) : '—';
+const fmtDT = d => d ? F_DT.format(new Date(d)) : '—';
 const daysSince = d => Math.floor((Date.now() - new Date(d)) / DAY);
 const slug = s => norm(s).replace(/[^a-z0-9]+/g, '-');
 const pill = st => `<span class="pill s-${slug(st)}">${h(st)}</span>`;
@@ -249,7 +254,7 @@ const assetById = id => S.assets.find(a => a.id === id);
 const nameOf = id => S.profiles.find(p => p.id === id)?.name || 'Unknown';
 const whoOf = l => l.tech_name || nameOf(l.created_by);
 const hasH = v => v != null && v !== '';
-const fmtH = v => hasH(v) ? Number(v).toLocaleString() + ' h' : '—';
+const fmtH = v => hasH(v) ? F_NUM.format(Number(v)) + ' h' : '—';
 const numOrNull = v => (v == null || String(v).trim() === '') ? null : Number(v);
 const byNewest = (a, b) => new Date(b.created_at) - new Date(a.created_at);
 
@@ -485,12 +490,25 @@ function statusPatch(a, st) {
   if (!BAD.includes(st)) p.faulty_since = null;
   return p;
 }
+/* Fast lookups, rebuilt once per screen draw (data only changes between draws) */
+let IDX = null;
+function idx() {
+  if (IDX) return IDX;
+  const logs = new Map(), moves = new Map(), byModel = new Map();
+  for (const l of S.logs) { let a = logs.get(l.asset_id); if (!a) logs.set(l.asset_id, a = []); a.push(l); }
+  for (const a of logs.values()) a.sort(byNewest);
+  for (const m of S.part_moves) { if (!m.asset_id) continue; let a = moves.get(m.asset_id); if (!a) moves.set(m.asset_id, a = []); a.push(m); }
+  for (const a of S.assets) { if (a.status === 'Retired') continue; const k = norm(a.make) + '|' + norm(a.model); let x = byModel.get(k); if (!x) byModel.set(k, x = []); x.push(a); }
+  return IDX = { logs, moves, byModel, due: null };
+}
+const logsFor = id => idx().logs.get(id) || [];
+const movesFor = id => idx().moves.get(id) || [];
 function scheduleTargets(s) {
-  return s.asset_id ? S.assets.filter(a => a.id === s.asset_id && a.status !== 'Retired')
-    : S.assets.filter(a => a.status !== 'Retired' && norm(a.make) === norm(s.make) && norm(a.model) === norm(s.model));
+  if (s.asset_id) { const a = assetById(s.asset_id); return a && a.status !== 'Retired' ? [a] : []; }
+  return idx().byModel.get(norm(s.make) + '|' + norm(s.model)) || [];
 }
 function dueFor(s, a) {
-  const last = S.logs.filter(l => l.schedule_id === s.id && l.asset_id === a.id).sort(byNewest)[0];
+  const last = logsFor(a.id).find(l => l.schedule_id === s.id);
   const base = last ? last.created_at : a.created_at;
   let state = 'ok', dueDate = null, daysLeft = null, hoursLeft = null;
   if (s.interval_days) {
@@ -508,10 +526,11 @@ function dueFor(s, a) {
   return { s, a, last, dueDate, daysLeft, hoursLeft, state };
 }
 function dueList() {
+  if (idx().due) return idx().due;
   const out = []; const rank = { overdue:0, soon:1, ok:2 };
   for (const s of S.schedules) for (const a of scheduleTargets(s)) out.push(dueFor(s, a));
   const key = d => d.daysLeft ?? d.hoursLeft ?? 1e9;
-  return out.sort((x, y) => rank[x.state] - rank[y.state] || key(x) - key(y));
+  return idx().due = out.sort((x, y) => rank[x.state] - rank[y.state] || key(x) - key(y));
 }
 function dueText(d) {
   const p = [];
@@ -524,7 +543,7 @@ const duePill = d => `<span class="pill d-${d.state}">${d.state === 'overdue' ? 
 function manualsFor(a) {
   return S.manuals.filter(m => norm(m.make) === norm(a.make) && (!norm(m.model) || norm(m.model) === norm(a.model)));
 }
-function lastActivity(a) { return S.logs.find(l => l.asset_id === a.id); }
+function lastActivity(a) { return logsFor(a.id)[0]; }
 
 /* ============================================================
    ROUTING & RENDER
@@ -536,6 +555,7 @@ function route() {
 window.addEventListener('hashchange', () => { window.scrollTo(0, 0); render(); });
 
 function render() {
+  IDX = null;
   const r = route(); const app = $('#app');
   if (r.p !== 'scan') camStop();
   if (!S.booted) { app.innerHTML = '<div class="center muted">Loading…</div>'; return; }
@@ -642,7 +662,7 @@ function vDashboard() {
     <ul>${lf.map(a => `<li><a href="#/asset/${a.id}" class="tag">${h(a.tag)}</a><span>${h(a.make)} ${h(a.model)}</span>${pill(a.status)}<span class="spacer"></span><strong>${daysSince(a.faulty_since)} days</strong><span class="muted small">since ${fmtDate(a.faulty_since)}</span></li>`).join('')}</ul></section>` : ''}
   <div class="grid2">
     <section class="card"><h2>Faulty now</h2>
-      ${bad.length ? `<ul class="list">${bad.map(a => { const l = S.logs.find(x => x.asset_id === a.id && x.kind === 'Fault');
+      ${bad.length ? `<ul class="list">${bad.map(a => { const l = logsFor(a.id).find(x => x.kind === 'Fault');
         return `<li><a href="#/asset/${a.id}" class="tag">${h(a.tag)}</a><span>${h(a.model)}</span>${pill(a.status)}<span class="spacer"></span><span class="muted small">${a.faulty_since ? daysSince(a.faulty_since) + ' d' : ''}</span>${l || a.location ? `<div class="muted small" style="width:100%">${l ? h(l.title) : ''}${l && a.location ? ' · ' : ''}${a.location ? '📍 ' + h(a.location) : ''}</div>` : ''}</li>`; }).join('')}</ul>` : '<p class="empty">Nothing faulty. Nice.</p>'}
     </section>
     <section class="card"><h2>Service due</h2>
@@ -856,6 +876,7 @@ async function linkCode(f) {
 
 /* ---------- items ---------- */
 function vAssets() {
+  assetLimit = 150;
   const f = S.filter;
   return `<header class="page-h"><div><h1>Items</h1><p class="muted">${S.assets.length} fixtures and consoles</p></div>
     <div class="row"><button class="btn" data-act="export" data-what="inventory">${ic('download')} CSV</button><button class="btn primary" data-act="asset-new">${ic('plus')} Add item</button></div></header>
@@ -873,24 +894,26 @@ function filteredAssets() {
   return S.assets.filter(a => (!f.cat || a.category === f.cat)
     && (!f.status || (f.status === '__bad' ? BAD.includes(a.status) : a.status === f.status))
     && (!q || [a.tag, a.serial, a.make, a.model, a.location].some(v => norm(v).includes(q))))
-    .sort((x, y) => String(x.tag).localeCompare(String(y.tag), undefined, { numeric: true }));
+    .sort((x, y) => F_SORT.compare(String(x.tag), String(y.tag)));
 }
+let assetLimit = 150;
 function assetTable() {
-  const rows = filteredAssets();
-  if (!rows.length) return '<p class="empty">No items match.</p>';
+  const all = filteredAssets();
+  if (!all.length) return '<p class="empty">No items match.</p>';
+  const rows = all.slice(0, assetLimit), more = all.length - rows.length;
   return `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Tag</th><th>Item</th><th class="hide-m">Type</th><th class="hide-m">Location</th><th>Status</th><th class="hide-m">Lamp h</th><th class="hide-m">Fixture h</th><th class="hide-m">Last activity</th></tr></thead><tbody>
   ${rows.map(a => { const l = lastActivity(a); return `<tr class="click" data-act="go" data-href="#/asset/${a.id}">
     <td><span class="tag">${h(a.tag)}</span></td><td><div>${h(a.make)} ${h(a.model)}</div>${a.serial ? `<div class="muted small mono">${h(a.serial)}</div>` : ''}</td>
     <td class="hide-m">${h(a.category)}</td><td class="hide-m">${h(a.location || '—')}</td><td>${pill(a.status)}</td>
     <td class="hide-m">${fmtH(a.lamp_hours)}</td><td class="hide-m">${fmtH(a.fixture_hours)}</td><td class="hide-m muted small">${l ? h(l.kind) + ' · ' + fmtDate(l.created_at) : '—'}</td></tr>`; }).join('')}
-  </tbody></table></div>`;
+  </tbody></table></div>${more ? `<div class="row" style="justify-content:center;margin-top:14px"><button class="btn" data-act="assets-more">Show ${more} more</button></div>` : ''}`;
 }
 
 /* ---------- item detail ---------- */
 function vAsset(id) {
   const a = assetById(id);
   if (!a) return `<p class="empty">Item not found. <a href="#/assets">Back to items</a></p>`;
-  const logs = S.logs.filter(l => l.asset_id === a.id).sort(byNewest);
+  const logs = logsFor(a.id);
   const dues = S.schedules.filter(s => scheduleTargets(s).some(x => x.id === a.id)).map(s => dueFor(s, a));
   const mans = manualsFor(a);
   const long = BAD.includes(a.status) && a.faulty_since && daysSince(a.faulty_since) >= CFG.FAULT_ALERT_DAYS;
@@ -936,7 +959,7 @@ function logItem(l, showAsset) {
     <div class="log-top"><span class="kind">${h(l.kind)}</span><strong>${h(l.title)}</strong>${a ? `<a href="#/asset/${a.id}" class="tag">${h(a.tag)}</a><span class="muted small">${h(a.model)}</span>` : ''}</div>
     ${l.details ? `<p>${h(l.details)}</p>` : ''}
     <div class="meta"><span>${fmtDT(l.created_at)}</span><span>· ${h(whoOf(l))}</span>${l.location ? `<span>· 📍 ${h(l.location)}</span>` : ''}${l.parts ? `<span>· Parts: ${h(l.parts)}</span>` : ''}${hasH(l.lamp_hours) ? `<span>· Lamp ${fmtH(l.lamp_hours)}</span>` : ''}${hasH(l.fixture_hours) ? `<span>· Fixture ${fmtH(l.fixture_hours)}</span>` : ''}${l.status_after ? `<span>·</span>${pill(l.status_after)}` : ''}</div>
-    ${l.photos?.length ? `<div class="thumbs">${l.photos.map(p => `<img class="thumb" alt="Photo" data-bucket="photos" data-path="${h(p)}" data-act="photo-open" data-p="${h(p)}">`).join('')}</div>` : ''}
+    ${l.photos?.length ? `<div class="thumbs">${l.photos.map(p => `<img class="thumb" alt="Photo" loading="lazy" decoding="async" data-bucket="photos" data-path="${h(p)}" data-act="photo-open" data-p="${h(p)}">`).join('')}</div>` : ''}
   </div>${canDel && !showAsset ? `<button class="icon-btn" title="Delete entry" data-act="log-del" data-id="${l.id}">${ic('trash')}</button>` : '<span></span>'}</li>`;
 }
 function manualItem(m) {
@@ -944,10 +967,10 @@ function manualItem(m) {
 }
 const imgCache = {};
 async function hydrateImages() {
-  for (const img of document.querySelectorAll('img[data-path]')) {
+  await Promise.all([...document.querySelectorAll('img[data-path]')].map(async img => {
     const key = img.dataset.bucket + ':' + img.dataset.path;
-    try { imgCache[key] = imgCache[key] || await api.fileUrl(img.dataset.bucket, img.dataset.path); img.src = imgCache[key]; } catch {}
-  }
+    try { imgCache[key] = imgCache[key] || api.fileUrl(img.dataset.bucket, img.dataset.path); img.src = await imgCache[key]; } catch { delete imgCache[key]; }
+  }));
 }
 
 /* ---------- schedules ---------- */
@@ -1107,7 +1130,7 @@ function vPart(id) {
 }
 function partsFittedCard(a) {
   if (S.partsMissing) return '';
-  const ms = S.part_moves.filter(m => m.asset_id === a.id && m.kind === 'checkout').sort(byNewest);
+  const ms = movesFor(a.id).filter(m => m.kind === 'checkout').sort(byNewest);
   return `<section class="card"><div class="row" style="margin-bottom:10px"><h2 style="margin:0">Parts fitted</h2><span class="spacer"></span><button class="btn sm" data-act="checkout" data-tag="${h(a.tag)}">${ic('plus')} Check out part</button></div>
     ${ms.length ? `<ul class="list">${ms.map(m => { const pt = partById(m.part_id); return `<li><div style="flex:1;min-width:150px"><a href="#/part/${m.part_id}" style="text-decoration:none">${h(pt?.name || 'Part')}</a> <b>×${-m.change}</b><div class="muted small">${fmtDate(m.created_at)} · ${h(m.person_name || '—')}</div></div></li>`; }).join('')}</ul>` : '<p class="empty">No parts checked out for this item.</p>'}
   </section>`;
@@ -1401,7 +1424,7 @@ function exportCSV(what, opts = {}) {
     toast(`${rows.length} entries exported`);
   }
 }
-const filteredAssetsAll = () => [...S.assets].sort((x, y) => String(x.tag).localeCompare(String(y.tag), undefined, { numeric: true }));
+const filteredAssetsAll = () => [...S.assets].sort((x, y) => F_SORT.compare(String(x.tag), String(y.tag)));
 const faultRows = () => S.assets.filter(a => BAD.includes(a.status)).sort((x, y) => new Date(x.faulty_since || 0) - new Date(y.faulty_since || 0));
 function printDoc(html) { $('#print').innerHTML = html; setTimeout(() => window.print(), 50); }
 function printAsset(a) {
@@ -1455,6 +1478,7 @@ const ACT = {
   'print-faults': printFaults,
   'export': d => exportCSV(d.what),
   'due-tab': d => { S.dueTab = d.tab; render(); },
+  'assets-more': () => { assetLimit = 1e9; const el = $('#asset-list'); if (el) el.innerHTML = assetTable(); },
   'part-new': () => partModal(),
   'part-edit': d => partModal(S.parts.find(x => x.id === d.id)),
   'part-del': d => del('parts', d.id, 'Delete this part and its stock history?', () => { S.part_moves = S.part_moves.filter(m => m.part_id !== d.id); location.hash = '#/parts'; }),
@@ -1528,11 +1552,12 @@ document.addEventListener('submit', async e => {
   catch (err) { const box = $('#auth-err'); if (box && f.closest('.auth')) box.textContent = errMsg(err); else toast(errMsg(err), 'bad'); }
   finally { if (btn && btn.isConnected) { btn.disabled = false; btn.innerHTML = label; } }
 });
+let searchTimer = 0;
 document.addEventListener('input', e => {
   const k = e.target.dataset.filter; if (!k) return;
   if (k === 'partQ') { S.partQ = e.target.value; $('#part-list').innerHTML = partTable(); return; }
   if (k === 'manualQ') { S.manualQ = e.target.value; const keep = e.target.selectionStart; render(); const i = $('[data-filter=manualQ]'); i.focus(); i.setSelectionRange(keep, keep); return; }
-  S.filter[k] = e.target.value; $('#asset-list').innerHTML = assetTable();
+  S.filter[k] = e.target.value; clearTimeout(searchTimer); searchTimer = setTimeout(() => { assetLimit = 150; const el = $('#asset-list'); if (el) el.innerHTML = assetTable(); }, 120);
 });
 document.addEventListener('change', async e => {
   const t = e.target;
