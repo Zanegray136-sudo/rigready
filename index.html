@@ -226,6 +226,7 @@ label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px;font-wei
    ============================================================ */
 const CFG = Object.assign({ SUPABASE_URL:'', SUPABASE_ANON_KEY:'', APP_NAME:'RigReady', FAULT_ALERT_DAYS:60, DUE_SOON_DAYS:14 }, window.RIGREADY_CONFIG || {});
 const DEMO = !CFG.SUPABASE_URL || !CFG.SUPABASE_ANON_KEY;
+const BUILD = '2026-10-30.1';   // bump together with version.json on every release
 const sb = (!DEMO && window.supabase) ? window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY) : null;
 
 const BAD = ['Faulty','In repair','Out of service'];
@@ -284,7 +285,11 @@ function toast(msg, kind='') {
   const t = document.createElement('div'); t.className = 'toast ' + kind; t.textContent = msg;
   $('#toast').appendChild(t); setTimeout(() => t.remove(), 3200);
 }
-function errMsg(e) { return e?.message || e?.error_description || String(e); }
+function errMsg(e) {
+  const m = e?.message || e?.error_description || String(e);
+  if (!navigator.onLine || /Failed to fetch|NetworkError|Load failed|network request failed/i.test(m)) return 'No signal — this wasn\'t saved. Try again when you\'re back online.';
+  return m;
+}
 
 async function compressImage(file, max) {
   max = max || (DEMO ? 900 : 1600);
@@ -312,7 +317,7 @@ function supabaseApi() {
     },
     async resetPw(email) { const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.href.split('#')[0] }); if (error) throw error; },
     async setPw(password) { const { error } = await sb.auth.updateUser({ password }); if (error) throw error; },
-    async signOut() { await sb.auth.signOut(); },
+    async signOut() { clearCaches(); await sb.auth.signOut(); },
     async profile(id) { const { data, error } = await sb.from('profiles').select('*').eq('id', id).maybeSingle(); if (error) throw error; return data; },
     async all(table) {
       let out = [], from = 0;
@@ -468,13 +473,55 @@ async function loadAll() {
   catch { Object.assign(S, { parts: [], part_moves: [], partsMissing: true }); }
 }
 
-async function boot() {
+/* ---------- saved copy on this device: instant open + offline viewing ---------- */
+const SYNC_TABLES = ['assets', 'logs', 'schedules', 'manuals', 'profiles', 'parts', 'part_moves'];
+const cacheKey = id => 'rr-data-v1:' + id;
+let saveTimer = 0;
+function saveCache() {
+  if (DEMO || !S.user || !S.profile || S.profile.role === 'pending') return;
   try {
-    S.user = await api.session();
+    const d = { at: S.lastSync || Date.now(), profile: S.profile, partsMissing: S.partsMissing };
+    for (const t of SYNC_TABLES) d[t] = S[t];
+    localStorage.setItem(cacheKey(S.user.id), JSON.stringify(d));
+  } catch {}
+}
+const scheduleSave = () => { clearTimeout(saveTimer); saveTimer = setTimeout(saveCache, 1500); };
+function readCache(id) { try { return JSON.parse(localStorage.getItem(cacheKey(id)) || 'null'); } catch { return null; } }
+function clearCaches() { try { for (const k of Object.keys(localStorage)) if (k.startsWith('rr-data-')) localStorage.removeItem(k); } catch {} }
+
+async function boot() {
+  try { S.user = await api.session(); } catch { S.user = null; }
+  const c = S.user && !DEMO ? readCache(S.user.id) : null;
+  if (c && c.profile && c.profile.role !== 'pending') {          // show the saved copy straight away…
+    for (const t of SYNC_TABLES) S[t] = c[t] || [];
+    Object.assign(S, { profile: c.profile, partsMissing: !!c.partsMissing, lastSync: c.at, booted: true });
+    render();
+    sync(true);                                                 // …then freshen it in the background
+    return;
+  }
+  try {
     S.profile = S.user ? await api.profile(S.user.id) : null;
-    if (S.profile && S.profile.role !== 'pending') await loadAll();
-  } catch (e) { toast('Could not load data: ' + errMsg(e), 'bad'); }
+    if (S.profile && S.profile.role !== 'pending') { await loadAll(); S.lastSync = Date.now(); S.offline = false; saveCache(); }
+  } catch (e) { S.offline = !navigator.onLine; toast('Could not load data: ' + errMsg(e), 'bad'); }
   S.booted = true; render();
+}
+async function sync(quiet) {
+  if (DEMO || S.syncing || !S.user) return;
+  S.syncing = true;
+  try {
+    const prof = await api.profile(S.user.id);
+    if (!prof || prof.role === 'pending') { clearCaches(); S.profile = prof; for (const t of SYNC_TABLES) S[t] = []; render(); return; }   // access removed → wipe
+    S.profile = prof;
+    await loadAll();
+    Object.assign(S, { lastSync: Date.now(), offline: false });
+    saveCache();
+    if ($('#modal.open') || qr) S.needsRender = true; else render();
+    if (!quiet) toast('Up to date');
+  } catch (e) {
+    const wasOffline = S.offline; S.offline = true;
+    if (!quiet) toast(errMsg(e), 'bad');
+    if (!wasOffline && !$('#modal.open') && !qr) render();
+  } finally { S.syncing = false; }
 }
 
 /* ============================================================
@@ -555,7 +602,8 @@ function route() {
 window.addEventListener('hashchange', () => { window.scrollTo(0, 0); render(); });
 
 function render() {
-  IDX = null;
+  IDX = null; S.needsRender = false;
+  if (S.booted && S.profile && S.profile.role !== 'pending') scheduleSave();
   const r = route(); const app = $('#app');
   if (r.p !== 'scan') camStop();
   if (!S.booted) { app.innerHTML = '<div class="center muted">Loading…</div>'; return; }
@@ -575,7 +623,7 @@ function shell(p, body) {
   const over = dueList().filter(d => d.state === 'overdue').length;
   const lf = longFaults().length;
   const item = (k, icn, label, badge) => `<a href="#/${k}" class="nav-i ${p === k || ((k === 'assets' && p === 'asset') || (k === 'parts' && p === 'part')) ? 'on' : ''}">${ic(icn)}<span>${label}</span>${badge ? `<em class="badge">${badge}</em>` : ''}</a>`;
-  return `${DEMO ? '<div class="demo-bar">Demo mode — sample data, saved only in this browser. Add your Supabase keys to config.js to go live with team log-ins.</div>' : ''}
+  return `${S.offline ? `<div class="demo-bar" style="background:#2a1416;color:#ff9a9a;border-color:#5a2328">📵 No signal — showing what was saved${S.lastSync ? ' ' + fmtDT(S.lastSync) : ''}. Looking things up works; saving needs signal.</div>` : ''}${S.updateReady ? `<div class="demo-bar" style="background:#10261b;color:#7ee2b0;border-color:#1d4a33">A new version of RigReady is ready. <button class="btn sm" data-act="reload-app" style="margin-left:8px;height:26px">Update now</button></div>` : ''}${DEMO ? '<div class="demo-bar">Demo mode — sample data, saved only in this browser. Add your Supabase keys to config.js to go live with team log-ins.</div>' : ''}
   <div class="topbar"><button class="icon-btn" data-act="nav-toggle" aria-label="Menu">${ic('menu')}</button><span class="brand">${LOGO}${h(CFG.APP_NAME)}</span><a class="icon-btn" href="#/scan" aria-label="Scan">${ic('scan')}</a></div>
   <div class="layout">
     <aside class="side">
@@ -1233,7 +1281,7 @@ async function submitPart(f) {
    MODALS & FORMS
    ============================================================ */
 function openModal(title, body) { $('#modal-title').textContent = title; $('#modal-body').innerHTML = body; $('#modal').classList.add('open'); setTimeout(() => $('#modal-body input:not([type=hidden]):not([type=file]),#modal-body select,#modal-body textarea')?.focus(), 30); }
-function closeModal() { $('#modal').classList.remove('open'); $('#modal-body').innerHTML = ''; }
+function closeModal() { $('#modal').classList.remove('open'); $('#modal-body').innerHTML = ''; if (S.needsRender) setTimeout(render, 0); }
 const uniq = arr => [...new Set(arr.filter(Boolean).map(s => String(s).trim()))].sort();
 const datalists = () => `
   <datalist id="dl-make">${uniq([...S.assets.map(a => a.make), ...S.manuals.map(m => m.make)]).map(v => `<option value="${h(v)}">`).join('')}</datalist>
@@ -1452,7 +1500,8 @@ const ACT = {
   'nav-toggle': () => document.body.classList.toggle('nav-open'),
   'nav-close': () => document.body.classList.remove('nav-open'),
   'modal-close': closeModal,
-  'refresh': async () => { try { await loadAll(); render(); toast('Up to date'); } catch (e) { toast(errMsg(e), 'bad'); } },
+  'refresh': () => DEMO ? render() : sync(false),
+  'reload-app': () => location.reload(),
   'recheck': () => boot(),
   'signout': () => api.signOut(),
   'auth-tab': d => { S.authTab = d.tab; render(); },
@@ -1577,20 +1626,36 @@ document.addEventListener('change', async e => {
   }
   if (t.name === 'scope' && t.closest('[data-form=sched]')) { $('#scope-model').hidden = t.value !== 'model'; $('#scope-asset').hidden = t.value !== 'asset'; }
 });
-document.addEventListener('visibilitychange', async () => {
-  if (document.hidden || DEMO || !S.profile || S.profile.role === 'pending' || $('#modal.open') || qr) return;
-  try { await loadAll(); render(); } catch {}
+/* back to the app: refresh at most once a minute, check for a new version every 5 minutes */
+let lastVersionCheck = 0;
+async function checkVersion() {
+  if (DEMO || S.updateReady || Date.now() - lastVersionCheck < 5 * 60e3) return;
+  lastVersionCheck = Date.now();
+  try {
+    const v = await (await fetch('version.json?t=' + Date.now(), { cache: 'no-store' })).json();
+    if (v.build && v.build !== BUILD) { S.updateReady = true; if (!$('#modal.open') && !qr) render(); }
+  } catch {}
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { if (S.booted) saveCache(); return; }
+  checkVersion();
+  if (DEMO || !S.profile || S.profile.role === 'pending' || qr) return;
+  if (Date.now() - (S.lastSync || 0) > 60e3) sync(true);
 });
+window.addEventListener('online', () => { if (S.profile && S.profile.role !== 'pending') sync(true); });
+window.addEventListener('offline', () => { S.offline = true; if (!$('#modal.open') && !qr) render(); });
+setInterval(checkVersion, 30 * 60e3);
+if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
 
 /* ---------- start ---------- */
 if (sb) {
   sb.auth.onAuthStateChange((ev, session) => {
     if (ev === 'PASSWORD_RECOVERY') { S.recovery = true; setTimeout(render, 0); return; }
     if (ev === 'SIGNED_IN' && session?.user?.id !== S.user?.id) setTimeout(boot, 0);
-    if (ev === 'SIGNED_OUT') { Object.assign(S, { user:null, profile:null, assets:[], logs:[], schedules:[], manuals:[], profiles:[] }); setTimeout(render, 0); }
+    if (ev === 'SIGNED_OUT') { clearCaches(); Object.assign(S, { user:null, profile:null, assets:[], logs:[], schedules:[], manuals:[], profiles:[] }); setTimeout(render, 0); }
   });
 }
-if (!DEMO && !window.supabase) { $('#app').innerHTML = '<div class="center muted">Could not load the database library. Check your internet connection and reload.</div>'; }
+if (!DEMO && !window.supabase) { $('#app').innerHTML = `<div class="center muted" style="padding:0 24px;text-align:center">${navigator.onLine ? 'Could not load the database library. Reload to try again.' : 'No signal. Open RigReady once with signal on this device and it will work offline after that.'}</div>`; }
 else boot();
 </script>
 </body>
